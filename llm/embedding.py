@@ -37,9 +37,17 @@ def embed(
     backoff. Raises with the MiniMax error message on permanent failures.
     """
     model = model or DEFAULT_MODEL
-    api_key = os.getenv("MINIMAX_API_KEY")
+    # Token Plan keys (sk-cp-) typically have very tight RPM caps on embeddings.
+    # Allow a separate pay-as-you-go key (sk-api-) for embeddings — falling back
+    # to the T2A key (which is already pay-as-you-go for users who needed voice),
+    # and finally to the chat key for users whose plan does cover embeddings.
+    api_key = (
+        os.getenv("MINIMAX_EMBED_API_KEY")
+        or os.getenv("MINIMAX_T2A_API_KEY")
+        or os.getenv("MINIMAX_API_KEY")
+    )
     if not api_key:
-        raise RuntimeError("MINIMAX_API_KEY not set.")
+        raise RuntimeError("No MiniMax API key set (MINIMAX_EMBED_API_KEY / MINIMAX_T2A_API_KEY / MINIMAX_API_KEY).")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
