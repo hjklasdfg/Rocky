@@ -32,9 +32,27 @@ class RouteDecision:
 # Order matters — first match wins. More specific patterns come first so
 # e.g. "find any email from last month" routes to knowledge, not email.
 _HEURISTIC_PATTERNS = [
-    # Knowledge first: vague references to past emails outrank generic email.
+    # Email composition first — explicit send/reply/compose verbs take priority
+    # over semantic routing so "reply to emails about Sarah" doesn't get
+    # misrouted to RAG.
+    (r"\b(send (an? )?(email|reply)|reply (to|with)|compose (an? )?(email|reply)|"
+     r"write (an? )?email|forward (this|the|that))\b", "email"),
+
+    # Knowledge: semantic / vague / "what did X say about" content queries.
+    # Triggers on:
+    #   - time qualifiers ("last week/month/year")
+    #   - search verbs ("find/search emails about", "any emails mentioning")
+    #   - generic "emails about X" pattern (semantic content lookup)
+    #   - "what did I/someone email/say/write/tell about" (semantic)
+    #   - "who (emailed/told/said) about" (sender attribution from content)
     (r"\b(last (week|month|year)|past emails?|earlier emails?|"
-     r"find any emails?|search (my )?emails? for|any emails? (about|mentioning))\b", "knowledge"),
+     r"find (any )?emails? (about|mentioning|on)|"
+     r"search (my )?emails? (for|about)|"
+     r"any emails? (about|mentioning)|"
+     r"emails? about \w+|"
+     r"what did (i|\w+) (email|say|write|tell|mention)|"
+     r"who (emailed|told|said|wrote|mentioned))\b", "knowledge"),
+
     # Memory: explicit save/forget verbs.
     (r"\b(remember (that|this)|forget (my|the|that)|save (this|that)|note that)\b", "memory"),
     # Calendar: includes reminder phrasing (becomes a calendar event).
@@ -43,8 +61,8 @@ _HEURISTIC_PATTERNS = [
     # Web search: real-time info patterns.
     (r"\b(weather|news|stock|price|how (long|far|much)|score|store hours|"
      r"opening hours|what time does)\b", "web"),
-    # Email last (most generic).
-    (r"\b(emails?|inbox|gmail|reply|archive|unread|read (my|the) (mail|email))\b", "email"),
+    # Email last (most generic — bare "emails" / "inbox" / "unread").
+    (r"\b(emails?|inbox|gmail|archive|unread|read (my|the) (mail|email))\b", "email"),
 ]
 
 
