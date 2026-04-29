@@ -45,10 +45,10 @@ DEFAULT_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
 PRICING = {
     "MiniMax-M2.7":           {"input": 0.30, "output": 1.20},
     "MiniMax-M2.7-highspeed": {"input": 0.30, "output": 1.20},
-    "MiniMax-M2.7-VL":        {"input": 0.40, "output": 1.20},  # Vision variant; image tokens count toward input
     "MiniMax-M2.5":           {"input": 0.30, "output": 1.20},
     "MiniMax-M2":             {"input": 0.30, "output": 1.20},
     "MiniMax-Text-01":        {"input": 0.20, "output": 1.10},
+    "MiniMax-VL-01":          {"input": 0.20, "output": 1.10},  # Vision-language; image tokens count toward input
     "abab6.5s-chat":          {"input": 0.20, "output": 0.60},
 }
 

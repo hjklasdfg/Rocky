@@ -28,9 +28,11 @@ class VisionAgent(BaseAgent):
 
     @property
     def model(self) -> str | None:
-        # MiniMax-M2.7-VL is the multimodal variant of the M2.7 family. Override
-        # via env if MiniMax renames or you want to A/B another vision model.
-        return os.getenv("MINIMAX_VISION_MODEL", "MiniMax-M2.7-VL")
+        # MiniMax-VL-01 is the vision-language model on the international
+        # platform — it's a separate model line from the M2.x text family
+        # (M2.7 is text-only despite what naming might suggest). Override
+        # via env if MiniMax ships a successor (MiniMax-VL-02 etc.).
+        return os.getenv("MINIMAX_VISION_MODEL", "MiniMax-VL-01")
 
     def system_prompt(self, memory: dict | None = None) -> str:
         return render("vision", context=build_context(memory))
