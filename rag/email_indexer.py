@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 
 from rag.email_store import collection_size, upsert_emails
 
-DEFAULT_BACKFILL_QUERY = "category:primary newer_than:6m"
+DEFAULT_BACKFILL_QUERY = "in:inbox newer_than:6m"
 BACKFILL_PAGE_SIZE = 50
 MAX_BACKFILL_MESSAGES = 500  # Cap to keep MiniMax embed cost bounded for demos
 
