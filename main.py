@@ -537,19 +537,39 @@ async def auth_callback(code: str):
         except Exception as e:
             print(f"[OAuth] RAG backfill failed for {email}: {e}")
 
-    return RedirectResponse(f"/setup?token={api_token}&name={name}")
+    # Decide whether to flag the BYOK prompt on /setup. Non-operator users
+    # without a MiniMax chat key in DB will hit 402 on /api/chat, so we
+    # surface a clear banner on /setup with a deeplink to /settings instead
+    # of letting them discover it the hard way.
+    needs_keys = "0"
+    if not is_operator(email):
+        try:
+            from database import get_user_keys
+            user_keys = get_user_keys(google_id)
+            if not user_keys.get("minimax_chat"):
+                needs_keys = "1"
+        except Exception as e:
+            print(f"[OAuth] Could not check keys for {email}: {e}")
+
+    return RedirectResponse(
+        f"/setup?token={api_token}&name={name}&needs_keys={needs_keys}"
+    )
 
 
 @app.get("/setup", response_class=HTMLResponse)
-async def setup_page(token: str, name: str = ""):
+async def setup_page(token: str, name: str = "", needs_keys: str = "0"):
     """Show post-login page with API token and iOS Shortcut setup instructions.
 
     Renamed from /dashboard so the live observability dashboard can own that
     canonical URL.
+
+    needs_keys=1 surfaces a prominent BYOK banner — set by /auth/callback
+    when the just-logged-in user is non-operator and has no minimax_chat
+    key configured yet. They'd otherwise hit 402 on first /api/chat.
     """
     # Derive server URL from GOOGLE_REDIRECT_URI (strip /auth/callback)
     server_url = GOOGLE_REDIRECT_URI.replace("/auth/callback", "")
-    return HTMLResponse(_dashboard_html(token, name, server_url))
+    return HTMLResponse(_dashboard_html(token, name, server_url, needs_keys=needs_keys == "1"))
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -831,9 +851,28 @@ $('token-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sig
 </html>"""
 
 
-def _dashboard_html(token: str, name: str, server_url: str = "") -> str:
+def _dashboard_html(token: str, name: str, server_url: str = "", needs_keys: bool = False) -> str:
     display_name = name or "there"
     api_url = f"{server_url}/api/chat" if server_url else "/api/chat"
+
+    # BYOK prompt banner — shown only when the just-logged-in user is
+    # non-operator and has no minimax_chat key in DB. Without this prompt
+    # they'd discover the requirement only when /api/chat returns 402.
+    needs_keys_banner = ""
+    if needs_keys:
+        needs_keys_banner = """
+  <div class="byok-alert">
+    <div class="byok-alert-icon">⚠</div>
+    <div class="byok-alert-body">
+      <div class="byok-alert-title">One step before you start</div>
+      <div class="byok-alert-desc">
+        Rocky needs your own MiniMax API key to chat — the operator's
+        keys are reserved for them. It takes one minute.
+      </div>
+      <a class="byok-alert-cta" href="/settings">Configure API keys →</a>
+    </div>
+  </div>
+"""
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -935,11 +974,35 @@ def _dashboard_html(token: str, name: str, server_url: str = "") -> str:
   .curl-toggle:hover {{ color: rgba(255,255,255,0.5); }}
   .curl-content {{ display: none; margin-top: 8px; }}
   .curl-content.show {{ display: block; }}
+
+  /* BYOK first-time prompt banner */
+  .byok-alert {{
+    display: flex; gap: 14px; align-items: flex-start;
+    background: linear-gradient(135deg, rgba(255,154,108,0.15), rgba(255,107,138,0.15));
+    border: 1px solid rgba(255,154,108,0.4);
+    border-radius: 12px; padding: 18px 18px 18px 16px; margin-bottom: 28px;
+  }}
+  .byok-alert-icon {{
+    flex-shrink: 0; font-size: 20px; line-height: 1.2;
+    color: #FF9A6C;
+  }}
+  .byok-alert-body {{ flex: 1; }}
+  .byok-alert-title {{ font-size: 15px; font-weight: 700; color: white;
+    margin-bottom: 4px; }}
+  .byok-alert-desc {{ font-size: 13px; color: rgba(255,255,255,0.70);
+    line-height: 1.5; margin-bottom: 12px; }}
+  .byok-alert-cta {{
+    display: inline-block; padding: 9px 16px;
+    background: linear-gradient(135deg, #FF9A6C, #FF6B8A);
+    color: #0d0d1a; text-decoration: none; font-weight: 700; font-size: 13px;
+    border-radius: 8px;
+  }}
+  .byok-alert-cta:hover {{ filter: brightness(1.08); }}
 </style>
 </head>
 <body>
 <div class="container">
-
+{needs_keys_banner}
   <!-- Header -->
   <div class="header">
     <div class="logo">Rocky</div>
