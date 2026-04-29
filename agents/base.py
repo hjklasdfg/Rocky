@@ -157,36 +157,18 @@ class BaseAgent(ABC):
         user_message: str,
         history: list[dict],
         memory: dict | None = None,
-        *,
-        image_base64: str | None = None,
-        image_mime: str = "image/jpeg",
     ) -> str:
         """Execute the agent loop and return final text reply.
 
         history is mutated in place — the agent appends its messages to it.
-
-        Multimodal: if `image_base64` is provided, the current turn's user
-        message becomes an OpenAI-style content list with both the text and
-        the image data URL. History is still text-only (we never persist
-        the raw image bytes — they'd bloat session storage and the model
-        couldn't see them on follow-up turns anyway).
         """
         trace = current_trace()
         agent_span = trace.add_span(f"{self.name}.run", "agent") if trace else None
 
-        if image_base64:
-            data_url = f"data:{image_mime};base64,{image_base64}"
-            user_content: str | list = [
-                {"type": "text", "text": user_message or "Look at this image."},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ]
-        else:
-            user_content = user_message
-
         messages = [
             {"role": "system", "content": self.system_prompt(memory)},
             *_sanitize_history(history),
-            {"role": "user", "content": user_content},
+            {"role": "user", "content": user_message},
         ]
 
         for iteration in range(self.max_iterations):

@@ -16,7 +16,7 @@ from llm.minimax import get_client
 from prompts.loader import render
 from tracing.tracer import current_trace
 
-VALID_ROUTES = {"email", "calendar", "web", "memory", "knowledge", "smalltalk", "vision"}
+VALID_ROUTES = {"email", "calendar", "web", "memory", "knowledge", "smalltalk"}
 
 
 @dataclass

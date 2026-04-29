@@ -26,7 +26,6 @@ from agents.email_agent import EmailAgent
 from agents.knowledge_agent import KnowledgeAgent
 from agents.memory_agent import MemoryAgent
 from agents.router import decide as route_decide
-from agents.vision_agent import VisionAgent
 from agents.web_agent import WebAgent
 from memory import load_memory, save_memory
 from tools._credentials import current_credentials, current_user_id
@@ -39,7 +38,6 @@ _SPECIALISTS = {
     "web": WebAgent(),
     "memory": MemoryAgent(),
     "knowledge": KnowledgeAgent(),
-    "vision": VisionAgent(),
 }
 
 
@@ -131,22 +129,10 @@ def _fast_greeting(history: list, user_id: str | None) -> str:
 
 # --- Main entry ----------------------------------------------------------
 
-def process(
-    user_message: str,
-    history: list,
-    user_id: str | None = None,
-    *,
-    image_base64: str | None = None,
-    image_mime: str = "image/jpeg",
-) -> str:
+def process(user_message: str, history: list, user_id: str | None = None) -> str:
     """Route + dispatch one user turn. Returns the spoken-reply text.
 
     `history` is mutated in place — caller (SessionManager) re-reads it next turn.
-
-    Multimodal: when `image_base64` is set, the router is short-circuited
-    and the turn goes straight to the vision specialist. The vision agent
-    owns the full turn (extract → call tool → reply) so we don't pay for a
-    second LLM hop in another specialist.
     """
     # Wire credentials for tool calls
     if user_id:
@@ -156,24 +142,6 @@ def process(
     else:
         current_credentials.set(None)
         current_user_id.set(None)
-
-    # 0. Multimodal short-circuit — image present means vision turn.
-    # Skip the router entirely (saves a routing LLM call) since image-bearing
-    # requests always go to the vision specialist.
-    if image_base64:
-        trace = current_trace()
-        if trace:
-            trace.route = "vision"
-        memory = load_memory(user_id)
-        reply = _SPECIALISTS["vision"].run(
-            user_message,
-            history,
-            memory=memory,
-            image_base64=image_base64,
-            image_mime=image_mime,
-        )
-        _maybe_compact(history)
-        return reply
 
     # 1. Greeting fast path
     if _is_greeting(user_message):

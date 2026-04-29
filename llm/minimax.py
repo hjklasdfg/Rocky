@@ -48,7 +48,6 @@ PRICING = {
     "MiniMax-M2.5":           {"input": 0.30, "output": 1.20},
     "MiniMax-M2":             {"input": 0.30, "output": 1.20},
     "MiniMax-Text-01":        {"input": 0.20, "output": 1.10},
-    "MiniMax-VL-01":          {"input": 0.20, "output": 1.10},  # Vision-language; image tokens count toward input
     "abab6.5s-chat":          {"input": 0.20, "output": 0.60},
 }
 
