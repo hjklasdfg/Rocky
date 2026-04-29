@@ -214,6 +214,35 @@
 </style>
 </head>
 <body>
+
+<!-- Auth overlay: shown when no token in localStorage. Hidden once authed. -->
+<div id="login-overlay" style="display:none; position:fixed; inset:0; background:#0b0d12;
+     z-index:1000; align-items:center; justify-content:center; padding:24px;">
+  <form id="login-form" style="width:100%; max-width:420px; background:#161922;
+        border:1px solid #232634; border-radius:14px; padding:32px; box-shadow:0 20px 60px rgba(0,0,0,.4);">
+    <h1 style="margin:0 0 8px; font-size:32px; background:linear-gradient(135deg,#ff6b6b,#ffa07a);
+        -webkit-background-clip:text; background-clip:text; color:transparent;">Rocky</h1>
+    <div style="color:#8a8f9c; font-size:14px; margin-bottom:24px;">
+      Paste your API token to access the live dashboard.
+    </div>
+    <input id="login-input" type="password" autocomplete="off" autofocus
+      placeholder="API token"
+      style="width:100%; padding:12px 14px; background:#0b0d12; border:1px solid #232634;
+             border-radius:8px; color:#e6e8ec; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+             font-size:14px; outline:none; box-sizing:border-box;" />
+    <div id="login-error" style="color:#ff7a7a; font-size:13px; margin-top:10px; min-height:18px;"></div>
+    <button type="submit"
+      style="width:100%; margin-top:16px; padding:12px; background:linear-gradient(135deg,#ff6b6b,#ffa07a);
+             color:#fff; border:0; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+      Open Dashboard
+    </button>
+    <div style="color:#5a5f6c; font-size:12px; margin-top:18px; text-align:center;">
+      Token is stored in this browser's localStorage. Get one from <a href="/login" style="color:#8a9aff;">/login</a>.
+    </div>
+  </form>
+</div>
+
+<div id="app-root" style="display:none;">
 <div class="wrap">
 
   <header>
@@ -293,15 +322,45 @@ const $ = (id) => document.getElementById(id);
 
 // Cap renders for sanity
 const MAX_TRACES_RENDER = 30;
+const TOKEN_KEY = 'rocky_dashboard_token';
 
 let lastTracesJson = '';
 let lastMetricsJson = '';
 
+// --- Auth helpers ------------------------------------------------------------
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
+async function authedFetch(url, options = {}) {
+  const token = getToken();
+  const headers = { ...(options.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const r = await fetch(url, { ...options, headers });
+  if (r.status === 401) {
+    clearToken();
+    showLogin('Token rejected — please paste a valid one.');
+    throw new Error('unauthorized');
+  }
+  return r;
+}
+
+function showLogin(msg) {
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('app-root').style.display = 'none';
+  if (msg) document.getElementById('login-error').textContent = msg;
+}
+
+function showApp() {
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('app-root').style.display = '';
+}
+
 async function refresh() {
   try {
     const [m, t] = await Promise.all([
-      fetch('/metrics').then(r => r.json()),
-      fetch('/traces?limit=50').then(r => r.json()),
+      authedFetch('/metrics').then(r => r.json()),
+      authedFetch('/traces?limit=50').then(r => r.json()),
     ]);
     if (JSON.stringify(m) !== lastMetricsJson) {
       renderMetrics(m); lastMetricsJson = JSON.stringify(m);
@@ -375,7 +434,7 @@ function renderTraces(traces) {
 }
 
 async function openTrace(traceId) {
-  const t = await fetch(`/trace/${traceId}`).then(r => r.json());
+  const t = await authedFetch(`/trace/${traceId}`).then(r => r.json());
   $('d-msg').textContent = t.user_message || '—';
   $('d-meta').innerHTML = `<span class="badge badge-route ${t.route || 'unknown'}">${t.route || 'unknown'}</span> · ${t.trace_id}`;
   $('d-duration').textContent = (t.duration_ms || 0).toLocaleString() + ' ms';
@@ -421,7 +480,7 @@ $('tester-form').addEventListener('submit', async (e) => {
   if (!msg) return;
   input.disabled = true;
   try {
-    await fetch('/api/chat', {
+    await authedFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg, user_id: 'dashboard', tts: false }),
@@ -436,9 +495,37 @@ $('tester-form').addEventListener('submit', async (e) => {
   }
 });
 
-// Initial + interval
-refresh();
-setInterval(refresh, 2000);
+// --- Login form --------------------------------------------------------------
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('login-input');
+  const token = input.value.trim();
+  if (!token) return;
+  // Validate by hitting /metrics with this token
+  const r = await fetch('/metrics', { headers: { 'Authorization': `Bearer ${token}` } });
+  if (r.status === 401) {
+    document.getElementById('login-error').textContent = 'Invalid token — check that you pasted the full string.';
+    return;
+  }
+  if (!r.ok) {
+    document.getElementById('login-error').textContent = `Server returned ${r.status}.`;
+    return;
+  }
+  setToken(token);
+  showApp();
+  refresh();
+  if (!window._refreshInterval) window._refreshInterval = setInterval(refresh, 2000);
+});
+
+// --- Boot --------------------------------------------------------------------
+if (getToken()) {
+  showApp();
+  refresh();
+  window._refreshInterval = setInterval(refresh, 2000);
+} else {
+  showLogin();
+}
 </script>
+</div><!-- /app-root -->
 </body>
 </html>

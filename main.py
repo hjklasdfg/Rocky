@@ -262,16 +262,17 @@ async def serve_audio(filename: str):
 # --- Observability endpoints ---
 
 @app.get("/metrics")
-async def metrics():
+async def metrics(user: dict = Depends(get_current_user)):
     """Aggregate request metrics — total cost, token usage, route breakdown.
 
-    Open to anyone; in production, lock down with the same Bearer auth.
+    Auth-protected: same Bearer token as /api/chat. Dashboard sends it from
+    localStorage; unauthenticated requests get 401.
     """
     return JSONResponse(aggregate_metrics())
 
 
 @app.get("/trace/{trace_id}")
-async def get_trace_endpoint(trace_id: str):
+async def get_trace_endpoint(trace_id: str, user: dict = Depends(get_current_user)):
     """Inspect a single trace — every span (router decision, LLM call, tool call)."""
     trace = get_trace(trace_id)
     if not trace:
@@ -280,7 +281,7 @@ async def get_trace_endpoint(trace_id: str):
 
 
 @app.get("/traces")
-async def list_traces_endpoint(limit: int = 50):
+async def list_traces_endpoint(limit: int = 50, user: dict = Depends(get_current_user)):
     """Recent traces for the dashboard. Newest first."""
     return JSONResponse({"traces": list_traces(limit=limit)})
 
