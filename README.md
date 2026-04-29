@@ -1,11 +1,13 @@
 # Rocky — Multi-Agent Voice Assistant on MiniMax
 
-> **"Hi Rocky, what's on my schedule tomorrow?"** — He answers.
-> **"Reply to Sarah saying I'll be there at 3."** — Done, threaded properly.
-> **"What did Sarah say last month about the contract?"** — Semantic search over past emails.
-> **"What's the weather in London?"** — Live web search via Brave.
+> **"Hi Rocky, what's on my schedule tomorrow?"** — He answers in my own cloned voice.
+> **"What did Sarah say last month about the contract?"** — Semantic search hits in milliseconds.
+> **"Add an engineering review Friday at 4pm with Wei."** — Done, on my Google Calendar.
+> **"Reply to Sarah saying I'll be there at 3."** — Sent, properly threaded.
 
-Rocky is a voice-first personal assistant built on a **multi-agent architecture** with **MiniMax-M2.7** as the brain. Powered by Gmail, Google Calendar, Brave Search, and a local RAG knowledge base over the user's email history. Voice synthesis (with optional voice cloning) via MiniMax T2A.
+Rocky fills the gap between Siri (voice but no LLM) and ChatGPT (smart but no integration with my personal SaaS). **MiniMax-M2.7** powers a multi-agent router dispatching to five specialists across Gmail, Google Calendar, Brave Search, and a local RAG knowledge base over my email history. Replies are synthesised in my own cloned voice via MiniMax T2A.
+
+**Multi-tenant by design**: each user configures their own MiniMax + Brave keys (BYOK), all credentials Fernet-encrypted in PostgreSQL and per-request scoped via Python ContextVars. Sign in with Google OAuth at `/login`, configure keys at `/settings`, then use Rocky from the iOS Shortcut or the live dashboard.
 
 ---
 
@@ -18,9 +20,10 @@ Rocky is a voice-first personal assistant built on a **multi-agent architecture*
 | Architecture | **Router → 5 specialist agents** (email, calendar, web, memory, knowledge) |
 | Tool registration | **Versioned OpenAI tool schemas** (`tools/schemas.py`) |
 | Prompts | **6 versioned prompts** (`prompts/v1/*.md`, `PROMPT_VERSION` env to swap) |
-| RAG | **Email semantic search** via MiniMax embo-02 + numpy vector store |
-| Voice | **MiniMax speech-02 T2A** with optional voice cloning (returns `audio_url`) |
-| Observability | **Per-request traces, /metrics, live web dashboard** |
+| RAG | **Local vector store** (sentence-transformers + numpy) over 6 months of email via Gmail OAuth. Store layer is source-agnostic — adding more OAuth-able sources (Notion, GDrive, Slack) is a ~30-line indexer + OAuth wiring; truly-local files would require an upload endpoint or a per-user sync agent |
+| Voice | **MiniMax speech-02 T2A** + voice cloning (returns `audio_url`); BYOK rejection prompt is pre-synthesised once and reused |
+| Multi-tenant | **Per-user MiniMax / Brave keys** (BYOK), Fernet-encrypted in PG, ContextVar-injected per request; operator allowlist gives a free-pass pool |
+| Observability | **Per-request traces** (incl. BYOK rejections), `/metrics`, live `/dashboard` |
 | Eval | **20-case eval suite** with routing / tool-call / latency / cost metrics |
 
 ---
