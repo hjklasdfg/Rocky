@@ -123,6 +123,11 @@ class ChatRequest(BaseModel):
     # iOS Shortcuts can fetch + play the audio for richer voice than Siri's TTS.
     # Set to false for low-latency text-only flows (e.g. dashboard tests).
     tts: bool = True
+    # Optional image attachment for multimodal turns. iOS Shortcut sends the
+    # photo as base64 (no data: prefix); orchestrator routes any image-bearing
+    # request to the vision specialist regardless of message text.
+    image_base64: str | None = None
+    image_mime: str = "image/jpeg"
 
 
 class ChatResponse(BaseModel):
@@ -186,7 +191,13 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     trace = start_trace(user_message=request.message, user_id=user_id)
 
     try:
-        reply = orchestrate(request.message, history, user_id=user_id)
+        reply = orchestrate(
+            request.message,
+            history,
+            user_id=user_id,
+            image_base64=request.image_base64,
+            image_mime=request.image_mime,
+        )
     except Exception as e:
         end_trace(reply=f"[error] {e}")
         print(f"[Error] {e}")
