@@ -4,23 +4,29 @@ Use this when you need to (re-)build the email vector store outside the OAuth
 signup flow — e.g. after changing the backfill query, after first-login backfill
 silently failed, or before a demo where you want fresh vectors.
 
-Usage:
-    python -m scripts.rag_backfill                       # uses USER_EMAIL env or first user in DB
-    python -m scripts.rag_backfill --email you@x.com     # specific user
-    python -m scripts.rag_backfill --query "in:inbox newer_than:1y"
-    python -m scripts.rag_backfill --max 1000
-
-Run from project root with the venv active so module imports resolve.
+Usage (from project root, venv active):
+    python scripts/rag_backfill.py                       # uses USER_EMAIL env or first user in DB
+    python scripts/rag_backfill.py --email you@x.com     # specific user
+    python scripts/rag_backfill.py --query "in:inbox newer_than:1y"
+    python scripts/rag_backfill.py --max 1000
 """
 from __future__ import annotations
 
 import argparse
 import os
 import sys
+from pathlib import Path
+
+# Make project root importable when this file is run directly from scripts/.
+# Python only adds the script's own directory to sys.path by default, which
+# means `from auth import ...` would fail without this.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Load .env BEFORE any project imports — several modules read env at import time.
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(PROJECT_ROOT / ".env")
 
 from auth import get_credentials_for_user
 from database import _get_conn  # noqa: lightweight reuse for one ad-hoc query
