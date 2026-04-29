@@ -9,6 +9,7 @@ Reference: https://www.minimaxi.com/document/guides/embeddings
 from __future__ import annotations
 
 import os
+import time
 
 import requests
 
@@ -18,6 +19,11 @@ ENDPOINT = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1").rstrip("/"
 # embo-02 returns 1024-dim vectors. Used to size the Chroma collection.
 EMBED_DIM = {"embo-01": 1536, "embo-02": 1024}
 
+# Retry policy for transient MiniMax errors. RPM rate-limit (status_code 1002)
+# is the common one to hit during bulk backfill on Token Plan keys.
+_RETRYABLE_CODES = {1002, 1004, 1027, 2049}  # rate limit / server busy / overloaded
+_MAX_RETRIES = 5
+
 
 def embed(
     texts: list[str],
@@ -25,7 +31,11 @@ def embed(
     model: str | None = None,
     purpose: str = "db",  # "db" for indexing, "query" for retrieval
 ) -> list[list[float]]:
-    """Embed a batch of texts via MiniMax. Returns list of vectors."""
+    """Embed a batch of texts via MiniMax. Returns list of vectors.
+
+    Retries on transient errors (RPM rate-limit, server busy) with exponential
+    backoff. Raises with the MiniMax error message on permanent failures.
+    """
     model = model or DEFAULT_MODEL
     api_key = os.getenv("MINIMAX_API_KEY")
     if not api_key:
@@ -40,12 +50,32 @@ def embed(
         "texts": texts,
         "type": purpose,
     }
-    resp = requests.post(ENDPOINT, json=payload, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if "vectors" not in data:
-        raise RuntimeError(f"Unexpected MiniMax embed response: {data}")
-    return data["vectors"]
+
+    last_err: str | None = None
+    for attempt in range(_MAX_RETRIES):
+        resp = requests.post(ENDPOINT, json=payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        vectors = data.get("vectors")
+        if vectors is not None:
+            return vectors
+
+        # vectors is null — inspect base_resp to decide retry vs raise.
+        base = data.get("base_resp") or {}
+        code = base.get("status_code")
+        msg = base.get("status_msg", "unknown error")
+        last_err = f"code={code} msg={msg!r}"
+
+        if code in _RETRYABLE_CODES and attempt < _MAX_RETRIES - 1:
+            wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+            print(f"[embed] {last_err} — sleeping {wait}s (retry {attempt + 1}/{_MAX_RETRIES})")
+            time.sleep(wait)
+            continue
+
+        raise RuntimeError(f"MiniMax embed failed ({last_err}); full response: {data}")
+
+    raise RuntimeError(f"MiniMax embed: exhausted {_MAX_RETRIES} retries ({last_err})")
 
 
 def embed_one(text: str, **kwargs) -> list[float]:

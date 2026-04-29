@@ -151,10 +151,16 @@ def upsert_emails(emails: list[dict], user_id: str | None = None) -> int:
     if not docs:
         return 0
 
-    BATCH = 32
+    # Smaller batch + brief inter-batch sleep to stay under MiniMax's RPM
+    # ceiling on Token Plan keys. embed() also has its own retry-with-backoff.
+    BATCH = 16
+    INTER_BATCH_SLEEP = 1.5  # seconds
     new_vecs: list[list[float]] = []
+    import time as _time
     for i in range(0, len(docs), BATCH):
         new_vecs.extend(embed(docs[i:i + BATCH], purpose="db"))
+        if i + BATCH < len(docs):
+            _time.sleep(INTER_BATCH_SLEEP)
     new_matrix = np.asarray(new_vecs, dtype=np.float32)
 
     with _lock_for(user_id):
