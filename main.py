@@ -40,6 +40,29 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 GOOGLE_SCOPES = "openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar"
 
 
+# --- Multi-tenant access control ---
+
+def _operator_emails() -> set[str]:
+    """Comma-separated allowlist of emails exempt from BYOK enforcement.
+
+    Read at every call (no caching) so .env edits take effect on the next
+    request without an uvicorn restart.
+    """
+    raw = os.getenv("OPERATOR_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_operator(email: str | None) -> bool:
+    """True iff the user can use the server's env-var fallback keys.
+
+    Operators don't need to configure their own MiniMax / Brave keys;
+    everyone else does (BYOK enforcement at /api/chat).
+    """
+    if not email:
+        return True  # Legacy single-user / token.json mode — fully trusted
+    return email.lower() in _operator_emails()
+
+
 # --- Auth middleware ---
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
@@ -186,6 +209,7 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     # Per-user service keys → contextvars so all downstream MiniMax / Brave
     # calls bill against the right tenant. Falls back to env vars when the
     # user hasn't configured a key (handled inside resolve_*).
+    user_keys: dict[str, str | None] = {}
     if user_id:
         try:
             from database import get_user_keys
@@ -194,13 +218,26 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 current_minimax_chat_key,
                 current_minimax_payg_key,
             )
-            keys = get_user_keys(user_id)
-            current_minimax_chat_key.set(keys.get("minimax_chat"))
-            current_minimax_payg_key.set(keys.get("minimax_payg"))
-            current_brave_key.set(keys.get("brave"))
+            user_keys = get_user_keys(user_id)
+            current_minimax_chat_key.set(user_keys.get("minimax_chat"))
+            current_minimax_payg_key.set(user_keys.get("minimax_payg"))
+            current_brave_key.set(user_keys.get("brave"))
         except Exception as e:
             # DB lookup is best-effort — chat still works against env keys.
             print(f"[Keys] per-user key load failed (falling back to env): {e}")
+
+    # BYOK enforcement: non-operator users must configure their own MiniMax
+    # chat key before they can use the agent. Without this, anyone signing
+    # up via /login would burn the operator's quota indefinitely.
+    if not is_operator(user.get("email")) and not user_keys.get("minimax_chat"):
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "You need to configure your MiniMax chat key before using Rocky. "
+                "Visit /settings to bring your own keys (BYOK). The server's "
+                "default keys are reserved for the operator."
+            ),
+        )
 
     trace = start_trace(user_message=request.message, user_id=user_id)
 
