@@ -256,7 +256,10 @@ async def serve_audio(filename: str):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Audio not found (may have expired)")
     media_type = "audio/mpeg" if filename.endswith(".mp3") else "application/octet-stream"
-    return FileResponse(path, media_type=media_type, filename=filename)
+    # NOTE: do NOT pass filename= — it triggers `Content-Disposition: attachment`
+    # which makes iOS Shortcuts' Play Sound treat the response as a file download
+    # instead of audio data, resulting in silence. Inline streaming is what we want.
+    return FileResponse(path, media_type=media_type)
 
 
 # --- Observability endpoints ---
