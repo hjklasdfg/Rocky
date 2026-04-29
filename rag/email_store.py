@@ -151,13 +151,17 @@ def upsert_emails(emails: list[dict], user_id: str | None = None) -> int:
     if not docs:
         return 0
 
-    # Smaller batch + brief inter-batch sleep to stay under MiniMax's RPM
-    # ceiling on Token Plan keys. embed() also has its own retry-with-backoff.
-    BATCH = 16
-    INTER_BATCH_SLEEP = 1.5  # seconds
+    # Token Plan keys (sk-cp-) don't cover embeddings — they fall under the
+    # most restrictive default RPM (~5-10/min). We pace the loop conservatively
+    # so even users without a sk-api- pay-as-you-go key can complete a backfill
+    # eventually. embed() retries with 30s+ backoff if RPM is still hit.
+    BATCH = 8
+    INTER_BATCH_SLEEP = 4.0  # seconds — keeps avg below ~15 RPM
     new_vecs: list[list[float]] = []
     import time as _time
-    for i in range(0, len(docs), BATCH):
+    total_batches = (len(docs) + BATCH - 1) // BATCH
+    for batch_i, i in enumerate(range(0, len(docs), BATCH), start=1):
+        print(f"[email_store] embedding batch {batch_i}/{total_batches} ({len(docs[i:i + BATCH])} docs)")
         new_vecs.extend(embed(docs[i:i + BATCH], purpose="db"))
         if i + BATCH < len(docs):
             _time.sleep(INTER_BATCH_SLEEP)

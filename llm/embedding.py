@@ -22,7 +22,12 @@ EMBED_DIM = {"embo-01": 1536, "embo-02": 1024}
 # Retry policy for transient MiniMax errors. RPM rate-limit (status_code 1002)
 # is the common one to hit during bulk backfill on Token Plan keys.
 _RETRYABLE_CODES = {1002, 1004, 1027, 2049}  # rate limit / server busy / overloaded
-_MAX_RETRIES = 5
+_MAX_RETRIES = 6
+# RPM windows reset every 60s, so 1-2s of backoff doesn't actually clear the
+# limit. Start the wait at 30s for rate-limit specifically — the first retry
+# falls in the next minute window where the budget is fresh.
+_RATE_LIMIT_BASE_WAIT = 30  # seconds
+_OTHER_BASE_WAIT = 2  # seconds, for non-rate-limit transient errors
 
 
 def embed(
@@ -76,7 +81,13 @@ def embed(
         last_err = f"code={code} msg={msg!r}"
 
         if code in _RETRYABLE_CODES and attempt < _MAX_RETRIES - 1:
-            wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+            base = _RATE_LIMIT_BASE_WAIT if code == 1002 else _OTHER_BASE_WAIT
+            # Linear-ish backoff: 30s, 45s, 60s, 75s, 90s for rate limit;
+            # 2s, 4s, 8s, 16s, 32s for other transient errors.
+            if code == 1002:
+                wait = base + 15 * attempt
+            else:
+                wait = base * (2 ** attempt)
             print(f"[embed] {last_err} — sleeping {wait}s (retry {attempt + 1}/{_MAX_RETRIES})")
             time.sleep(wait)
             continue
