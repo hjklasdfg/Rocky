@@ -50,6 +50,20 @@
     animation: pulse 1.6s infinite;
   }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+  .header-right { display: inline-flex; align-items: center; gap: 14px; }
+  .icon-btn {
+    color: var(--muted); text-decoration: none;
+    width: 32px; height: 32px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.04); transition: background 0.15s, color 0.15s;
+    font-size: 16px; line-height: 1;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.10); color: var(--text); }
+  .icon-btn[title]:hover::after {
+    content: attr(title); position: absolute; transform: translateY(28px) translateX(-50%);
+    background: rgba(0,0,0,0.85); color: #fff; font-size: 11px;
+    padding: 4px 8px; border-radius: 4px; white-space: nowrap; pointer-events: none;
+  }
 
   /* ---- KPI cards ---- */
   .kpis {
@@ -251,7 +265,10 @@
       <h1>Rocky</h1>
       <div class="sub">Live agent dashboard · MiniMax-M2.7 · Brave Search</div>
     </div>
-    <div class="live" id="live">connected · refreshing every 2s</div>
+    <div class="header-right">
+      <div class="live" id="live">connected · refreshing every 2s</div>
+      <a href="/settings" class="icon-btn" title="API key settings" aria-label="Settings">⚙</a>
+    </div>
   </header>
 
   <!-- KPIs -->
