@@ -63,6 +63,64 @@ def is_operator(email: str | None) -> bool:
     return email.lower() in _operator_emails()
 
 
+# --- BYOK rejection: pre-synthesized voice prompt ---
+#
+# When a non-operator user without configured keys hits /api/chat, we want
+# Rocky to actually SAY "configure your keys" so the iPhone Shortcut
+# experience isn't dead silence. We synthesize this short message once
+# (using the operator's env T2A key, since this is a system message —
+# not billed to the rejected user) and cache it for all future rejections.
+# Zero per-rejection cost / latency after first use.
+
+BYOK_REJECTION_TEXT = (
+    "Please configure your MiniMax API key in the settings page before "
+    "you can chat with Rocky."
+)
+BYOK_AUDIO_FILENAME = "byok_rejection.mp3"
+
+
+def _get_byok_audio_url() -> str | None:
+    """Return URL of the pre-synthesized BYOK rejection prompt.
+
+    Lazy: synthesizes on first call, then reuses the on-disk file forever
+    (the audio file is in t2a.PERSISTENT_FILES so cleanup_old() skips it).
+    Uses operator env keys explicitly — the rejected user has none, but
+    even if they did we wouldn't bill them for a system message.
+    Returns None if synthesis fails (e.g. no env T2A key configured).
+    """
+    audio_path = t2a.AUDIO_DIR / BYOK_AUDIO_FILENAME
+    if audio_path.exists():
+        return f"/audio/{BYOK_AUDIO_FILENAME}"
+
+    # First-call synthesis. Clear any per-user contextvar so resolve_*()
+    # falls back to env keys (this audio is a system asset, not user content).
+    from tools._user_keys import (
+        current_brave_key,
+        current_minimax_chat_key,
+        current_minimax_payg_key,
+    )
+    saved_chat = current_minimax_chat_key.get()
+    saved_payg = current_minimax_payg_key.get()
+    saved_brave = current_brave_key.get()
+    current_minimax_chat_key.set(None)
+    current_minimax_payg_key.set(None)
+    current_brave_key.set(None)
+    try:
+        result = t2a.synthesize(BYOK_REJECTION_TEXT)
+        # synthesize() writes a uuid-named file; rename to our stable name
+        # so cleanup skips it and we can reference it by a known URL.
+        result.file_path.rename(audio_path)
+        print(f"[BYOK] synthesized rejection audio -> {audio_path.name}")
+        return f"/audio/{BYOK_AUDIO_FILENAME}"
+    except Exception as e:
+        print(f"[BYOK] failed to synthesize rejection audio: {e}")
+        return None
+    finally:
+        current_minimax_chat_key.set(saved_chat)
+        current_minimax_payg_key.set(saved_payg)
+        current_brave_key.set(saved_brave)
+
+
 # --- Auth middleware ---
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
@@ -206,38 +264,55 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     history = session_manager.get_or_create(session_key)
     print(f"\n[User: {session_key}] {request.message}")
 
-    # Per-user service keys → contextvars so all downstream MiniMax / Brave
-    # calls bill against the right tenant. Falls back to env vars when the
-    # user hasn't configured a key (handled inside resolve_*).
+    # Load user's stored keys (without setting contextvars yet — the BYOK
+    # check below needs to know whether keys exist, but if the user is
+    # rejected we want any T2A in the rejection path to use env keys).
     user_keys: dict[str, str | None] = {}
     if user_id:
         try:
             from database import get_user_keys
-            from tools._user_keys import (
-                current_brave_key,
-                current_minimax_chat_key,
-                current_minimax_payg_key,
-            )
             user_keys = get_user_keys(user_id)
-            current_minimax_chat_key.set(user_keys.get("minimax_chat"))
-            current_minimax_payg_key.set(user_keys.get("minimax_payg"))
-            current_brave_key.set(user_keys.get("brave"))
         except Exception as e:
             # DB lookup is best-effort — chat still works against env keys.
             print(f"[Keys] per-user key load failed (falling back to env): {e}")
 
     # BYOK enforcement: non-operator users must configure their own MiniMax
-    # chat key before they can use the agent. Without this, anyone signing
-    # up via /login would burn the operator's quota indefinitely.
+    # chat key. Rather than 402 (silent on iPhone), we record a trace AND
+    # return a TTS-spoken prompt so the user actually hears why nothing
+    # happened. The prompt audio is pre-synthesized + cached forever.
     if not is_operator(user.get("email")) and not user_keys.get("minimax_chat"):
-        raise HTTPException(
-            status_code=402,
-            detail=(
-                "You need to configure your MiniMax chat key before using Rocky. "
-                "Visit /settings to bring your own keys (BYOK). The server's "
-                "default keys are reserved for the operator."
-            ),
+        rej_trace = start_trace(user_message=request.message, user_id=user_id)
+        rej_trace.route = "byok_rejected"
+        guard_span = rej_trace.add_span("byok.check", "guard")
+        guard_span.end(rejected=True, reason="missing minimax_chat key",
+                       email=user.get("email"))
+
+        rej_audio_url = _get_byok_audio_url() if request.tts else None
+        rej_voice = t2a.DEFAULT_VOICE if rej_audio_url else None
+
+        end_trace(reply=BYOK_REJECTION_TEXT)
+        print(f"[BYOK] {user.get('email', '<no email>')} rejected — no minimax_chat key")
+        return ChatResponse(
+            reply=BYOK_REJECTION_TEXT,
+            action="stop",
+            audio_url=rej_audio_url,
+            audio_voice=rej_voice,
+            route="byok_rejected",
+            trace_id=rej_trace.trace_id,
+            cost_usd=rej_trace.total_cost_usd,
         )
+
+    # Allowed → wire keys to contextvars so all downstream MiniMax / Brave
+    # calls bill against the right tenant.
+    if user_id:
+        from tools._user_keys import (
+            current_brave_key,
+            current_minimax_chat_key,
+            current_minimax_payg_key,
+        )
+        current_minimax_chat_key.set(user_keys.get("minimax_chat"))
+        current_minimax_payg_key.set(user_keys.get("minimax_payg"))
+        current_brave_key.set(user_keys.get("brave"))
 
     trace = start_trace(user_message=request.message, user_id=user_id)
 

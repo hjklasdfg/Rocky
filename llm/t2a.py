@@ -209,16 +209,27 @@ def synthesize(
     )
 
 
+# Audio files that should NEVER be cleaned up — pre-synthesized system
+# messages (e.g. BYOK rejection prompt) we reuse across all rejected
+# requests. Saves T2A cost + latency. Filenames here must match what
+# main.py's _get_byok_audio_url() writes.
+PERSISTENT_FILES = {"byok_rejection.mp3"}
+
+
 def cleanup_old() -> int:
     """Best-effort GC of audio files older than AUDIO_TTL_SECONDS.
 
     Called opportunistically by main.py before each chat turn — keeps the
     cache from growing unbounded without needing a real scheduler.
+    Files in PERSISTENT_FILES are exempt (they're system messages we
+    pay to synthesize once and reuse forever).
     """
     cutoff = time.time() - AUDIO_TTL_SECONDS
     removed = 0
     try:
         for f in AUDIO_DIR.iterdir():
+            if f.name in PERSISTENT_FILES:
+                continue
             if f.is_file() and f.stat().st_mtime < cutoff:
                 f.unlink(missing_ok=True)
                 removed += 1
