@@ -67,15 +67,19 @@ _OTHER_BASE_WAIT = 2
 def _embed_minimax(texts: list[str], purpose: str = "db") -> list[list[float]]:
     import requests
 
+    # Resolution: dedicated embed env > per-user payg key (contextvar) > T2A env > main env.
+    # Per-user payg covers embeddings same way it covers T2A — both are
+    # pay-as-you-go on MiniMax's billing model.
+    from tools._user_keys import resolve_minimax_payg_key
     api_key = (
         os.getenv("MINIMAX_EMBED_API_KEY")
-        or os.getenv("MINIMAX_T2A_API_KEY")
-        or os.getenv("MINIMAX_API_KEY")
+        or resolve_minimax_payg_key()
     )
     if not api_key:
         raise RuntimeError(
-            "No MiniMax API key set "
-            "(MINIMAX_EMBED_API_KEY / MINIMAX_T2A_API_KEY / MINIMAX_API_KEY)."
+            "No MiniMax key for embeddings (MINIMAX_EMBED_API_KEY / "
+            "MINIMAX_T2A_API_KEY / MINIMAX_API_KEY env, or per-user "
+            "minimax_payg key via /settings)."
         )
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}

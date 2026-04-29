@@ -46,7 +46,7 @@ def _get_conn():
 # --- Schema ---
 
 def init_db() -> None:
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist; idempotent column adds for migrations."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
@@ -61,6 +61,15 @@ def init_db() -> None:
                     api_token TEXT UNIQUE NOT NULL,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
+            """)
+            # Per-user service API keys — added in a later migration. ALTER
+            # TABLE IF NOT EXISTS-style: postgres doesn't support `ADD COLUMN
+            # IF NOT EXISTS` until 9.6, but we're on 14+. Idempotent.
+            cur.execute("""
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS minimax_chat_key_encrypted TEXT,
+                ADD COLUMN IF NOT EXISTS minimax_payg_key_encrypted TEXT,
+                ADD COLUMN IF NOT EXISTS brave_key_encrypted TEXT;
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_memory (
@@ -204,6 +213,106 @@ def get_user_memory(user_id: str) -> dict:
                 "facts": facts,
                 "last_session_timestamp": row["last_session_timestamp"],
             }
+    finally:
+        conn.close()
+
+
+# --- User-specific service API keys (per-tenant isolation) ---
+# Three keys, all Fernet-encrypted using the same TOKEN_ENCRYPTION_KEY as
+# Google refresh tokens. None means "fall back to env var" (single-user / legacy mode).
+
+_KEY_COLUMN_BY_NAME = {
+    "minimax_chat": "minimax_chat_key_encrypted",
+    "minimax_payg": "minimax_payg_key_encrypted",
+    "brave":        "brave_key_encrypted",
+}
+
+
+def get_user_keys(user_id: str) -> dict[str, str | None]:
+    """Return the user's three service keys (decrypted, or None each)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT minimax_chat_key_encrypted,
+                          minimax_payg_key_encrypted,
+                          brave_key_encrypted
+                   FROM users WHERE id = %s""",
+                (user_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return {"minimax_chat": None, "minimax_payg": None, "brave": None}
+
+    def _maybe_decrypt(val: str | None) -> str | None:
+        if not val:
+            return None
+        try:
+            return _decrypt(val)
+        except Exception:
+            # Stored ciphertext can't be decrypted (e.g. rotation); treat as unset.
+            return None
+
+    return {
+        "minimax_chat": _maybe_decrypt(row["minimax_chat_key_encrypted"]),
+        "minimax_payg": _maybe_decrypt(row["minimax_payg_key_encrypted"]),
+        "brave":        _maybe_decrypt(row["brave_key_encrypted"]),
+    }
+
+
+def get_user_keys_status(user_id: str) -> dict[str, dict]:
+    """Read-only summary suitable for client display — does NOT return cleartext.
+
+    Each entry: {"set": bool, "prefix": "sk-cp-AB" | None}.
+    Prefix is the first 8 chars only — enough for the user to recognise their
+    own key without exposing it.
+    """
+    keys = get_user_keys(user_id)
+    return {
+        name: {
+            "set": bool(value),
+            "prefix": (value[:8] if value else None),
+        }
+        for name, value in keys.items()
+    }
+
+
+def set_user_keys(user_id: str, *, minimax_chat: str | None = None,
+                  minimax_payg: str | None = None, brave: str | None = None,
+                  clear_unset: bool = False) -> None:
+    """Update one or more of the user's service keys.
+
+    Pass empty string ("") to explicitly clear a key (revert to env fallback).
+    Pass None (default) to leave that column untouched, unless clear_unset=True.
+    """
+    updates: list[tuple[str, str | None]] = []
+    for name, raw in [("minimax_chat", minimax_chat),
+                       ("minimax_payg", minimax_payg),
+                       ("brave", brave)]:
+        col = _KEY_COLUMN_BY_NAME[name]
+        if raw is None:
+            if clear_unset:
+                updates.append((col, None))
+            continue
+        if raw == "":  # explicit clear
+            updates.append((col, None))
+        else:
+            updates.append((col, _encrypt(raw)))
+
+    if not updates:
+        return
+
+    set_clause = ", ".join(f"{col} = %s" for col, _ in updates)
+    params = [val for _, val in updates] + [user_id]
+
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE users SET {set_clause} WHERE id = %s", tuple(params))
+        conn.commit()
     finally:
         conn.close()
 

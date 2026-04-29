@@ -81,10 +81,17 @@ class MiniMaxClient:
     """
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
-        api_key = api_key or os.getenv("MINIMAX_API_KEY")
+        # Resolution order: explicit arg → per-request user key (contextvar)
+        # → env. The contextvar is set by main.py at the start of /api/chat
+        # so that each user's MiniMax usage is billed to their own account.
+        # Falls back to env for legacy single-user / dev / first-request mode.
+        if api_key is None:
+            from tools._user_keys import resolve_minimax_chat_key
+            api_key = resolve_minimax_chat_key()
         if not api_key:
             raise RuntimeError(
-                "MINIMAX_API_KEY not set. Get one at https://www.minimaxi.com/"
+                "No MiniMax chat key. Either set MINIMAX_API_KEY in .env or "
+                "configure a per-user key via /settings."
             )
         # MiniMax international platform: api.minimax.io (note: .io, not .com).
         # China platform: api.minimax.chat (different keys, different format).
@@ -186,12 +193,12 @@ class MiniMaxClient:
         )
 
 
-# Module-level singleton — callers import `client` directly.
-_client: MiniMaxClient | None = None
-
-
 def get_client() -> MiniMaxClient:
-    global _client
-    if _client is None:
-        _client = MiniMaxClient()
-    return _client
+    """Build a MiniMaxClient bound to the current request's key.
+
+    Not cached: per-user keys are read from contextvars at construction
+    time, so reusing a singleton across users would bill the wrong account.
+    Construction cost is negligible — it just instantiates an OpenAI SDK
+    object pointing at MiniMax's base_url.
+    """
+    return MiniMaxClient()

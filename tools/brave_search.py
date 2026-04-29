@@ -26,10 +26,13 @@ class BraveSearchError(Exception):
 
 
 def _headers() -> dict:
-    api_key = os.getenv("BRAVE_API_KEY")
+    # Per-user key (contextvar set in /api/chat) takes precedence over env.
+    from tools._user_keys import resolve_brave_key
+    api_key = resolve_brave_key()
     if not api_key:
         raise BraveSearchError(
-            "BRAVE_API_KEY not set. Get one at https://brave.com/search/api/"
+            "No Brave key (set BRAVE_API_KEY in .env or configure per-user "
+            "via /settings; get one at https://brave.com/search/api/)."
         )
     return {
         "Accept": "application/json",

@@ -183,6 +183,25 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     history = session_manager.get_or_create(session_key)
     print(f"\n[User: {session_key}] {request.message}")
 
+    # Per-user service keys → contextvars so all downstream MiniMax / Brave
+    # calls bill against the right tenant. Falls back to env vars when the
+    # user hasn't configured a key (handled inside resolve_*).
+    if user_id:
+        try:
+            from database import get_user_keys
+            from tools._user_keys import (
+                current_brave_key,
+                current_minimax_chat_key,
+                current_minimax_payg_key,
+            )
+            keys = get_user_keys(user_id)
+            current_minimax_chat_key.set(keys.get("minimax_chat"))
+            current_minimax_payg_key.set(keys.get("minimax_payg"))
+            current_brave_key.set(keys.get("brave"))
+        except Exception as e:
+            # DB lookup is best-effort — chat still works against env keys.
+            print(f"[Keys] per-user key load failed (falling back to env): {e}")
+
     trace = start_trace(user_message=request.message, user_id=user_id)
 
     try:
@@ -287,6 +306,60 @@ async def get_trace_endpoint(trace_id: str, user: dict = Depends(get_current_use
 async def list_traces_endpoint(limit: int = 50, user: dict = Depends(get_current_user)):
     """Recent traces for the dashboard. Newest first."""
     return JSONResponse({"traces": list_traces(limit=limit)})
+
+
+# --- Per-user service API keys (multi-tenant) ---
+
+class KeysUpdateRequest(BaseModel):
+    # None = leave unchanged. Empty string = explicitly clear (revert to env fallback).
+    minimax_chat: str | None = None
+    minimax_payg: str | None = None
+    brave: str | None = None
+
+
+@app.get("/api/keys")
+async def get_keys(user: dict = Depends(get_current_user)):
+    """Return masked status of the user's three service keys.
+
+    Cleartext is NEVER returned — only {"set": bool, "prefix": "sk-cp-AB"}
+    so the user can see at a glance which keys are configured.
+    """
+    if not user.get("id"):
+        # Legacy single-user mode has no DB-stored keys.
+        return JSONResponse({
+            "minimax_chat": {"set": False, "prefix": None, "note": "legacy mode — uses env"},
+            "minimax_payg": {"set": False, "prefix": None, "note": "legacy mode — uses env"},
+            "brave":        {"set": False, "prefix": None, "note": "legacy mode — uses env"},
+        })
+    from database import get_user_keys_status
+    return JSONResponse(get_user_keys_status(user["id"]))
+
+
+@app.post("/api/keys")
+async def update_keys(req: KeysUpdateRequest, user: dict = Depends(get_current_user)):
+    """Update one or more of the user's service keys.
+
+    Send only the fields you want to change. Pass empty string ("") to
+    clear a key (reverts that slot to env fallback).
+    """
+    if not user.get("id"):
+        raise HTTPException(
+            status_code=400,
+            detail="Per-user keys require multi-user mode. Sign in via /login.",
+        )
+    from database import set_user_keys
+    set_user_keys(
+        user["id"],
+        minimax_chat=req.minimax_chat,
+        minimax_payg=req.minimax_payg,
+        brave=req.brave,
+    )
+    # Return the new status so the UI can refresh without a second round-trip.
+    from database import get_user_keys_status
+    return JSONResponse({
+        "ok": True,
+        "keys": get_user_keys_status(user["id"]),
+    })
 
 
 # --- Health check ---
@@ -442,6 +515,17 @@ async def setup_page(token: str, name: str = ""):
     return HTMLResponse(_dashboard_html(token, name, server_url))
 
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page():
+    """Per-user service-key settings page.
+
+    Static HTML — auth happens client-side via Bearer token in localStorage
+    (same pattern as /dashboard). The page calls GET /api/keys on load and
+    POST /api/keys on save.
+    """
+    return HTMLResponse(_SETTINGS_HTML)
+
+
 # --- HTML Templates ---
 
 _LOGIN_HTML = """<!DOCTYPE html>
@@ -494,6 +578,218 @@ _LOGIN_HTML = """<!DOCTYPE html>
     Sign in with Google
   </a>
 </div>
+</body>
+</html>"""
+
+
+_SETTINGS_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rocky — Settings</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh; font-family: -apple-system, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #0d0d1a 0%, #1a1a2e 40%, #16213e 70%, #1a1035 100%);
+    color: #e7e8ee; padding: 40px 20px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 32px; }
+  h1 {
+    font-size: 32px; font-weight: 700; letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #ff9a6c, #ff6b8a);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: #8b8d9b; margin-top: 6px; font-size: 14px; }
+  .back { color: #8b8d9b; font-size: 13px; text-decoration: none; }
+  .back:hover { color: #e7e8ee; }
+  .panel {
+    background: rgba(20,22,38,0.6); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px; padding: 24px; margin-top: 16px;
+  }
+  .field { margin-bottom: 22px; }
+  .field:last-child { margin-bottom: 0; }
+  .label-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  label { font-size: 14px; font-weight: 600; }
+  .status { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11px;
+    padding: 3px 8px; border-radius: 4px; }
+  .status.set { background: rgba(52,211,153,0.18); color: #34d399; }
+  .status.unset { background: rgba(231,232,238,0.08); color: #8b8d9b; }
+  .desc { color: #8b8d9b; font-size: 12px; margin-bottom: 8px; line-height: 1.5; }
+  input[type="password"], input[type="text"] {
+    width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    color: #e7e8ee; padding: 12px 14px; border-radius: 8px; font-size: 14px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+  }
+  input:focus { outline: none; border-color: #ff6b8a; }
+  .actions { margin-top: 32px; display: flex; gap: 12px; align-items: center; }
+  button {
+    background: linear-gradient(90deg, #ff9a6c, #ff6b8a); color: white;
+    border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600;
+    cursor: pointer; font-size: 14px;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid rgba(255,255,255,0.12); color: #e7e8ee; }
+  .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-top: 16px; display: none; }
+  .msg.ok { background: rgba(52,211,153,0.15); color: #34d399; display: block; }
+  .msg.err { background: rgba(255,107,138,0.15); color: #ff6b8a; display: block; }
+  .login-overlay {
+    position: fixed; inset: 0; background: rgba(13,13,26,0.95);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .login-card { background: rgba(20,22,38,0.9); padding: 32px; border-radius: 14px;
+    width: 360px; max-width: 90vw; border: 1px solid rgba(255,255,255,0.08); }
+  .hint { color: #8b8d9b; font-size: 12px; margin-top: 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div id="login" class="login-overlay">
+  <div class="login-card">
+    <h1 style="font-size:22px; margin-bottom:16px;">Rocky Settings</h1>
+    <p class="hint" style="margin-bottom:14px;">Paste your API token to manage your service keys.</p>
+    <input type="password" id="token-input" placeholder="API token" />
+    <div class="actions"><button onclick="signIn()">Continue</button></div>
+    <div id="login-msg" class="msg"></div>
+  </div>
+</div>
+
+<div id="app" class="wrap" style="display:none;">
+  <div class="header">
+    <div>
+      <h1>Service API Keys</h1>
+      <div class="subtitle">Configure your own MiniMax + Brave keys so usage bills to your account, not the operator's.</div>
+    </div>
+    <a class="back" href="/dashboard">← Dashboard</a>
+  </div>
+
+  <div class="panel">
+    <div class="field">
+      <div class="label-row">
+        <label for="minimax_chat">MiniMax chat key</label>
+        <span id="status-minimax_chat" class="status unset">unset</span>
+      </div>
+      <div class="desc">Token Plan key (sk-cp-...) for M2.7 chat. Get one at platform.minimax.io.</div>
+      <input type="password" id="minimax_chat" placeholder="sk-cp-..." autocomplete="off" />
+    </div>
+
+    <div class="field">
+      <div class="label-row">
+        <label for="minimax_payg">MiniMax pay-as-you-go key</label>
+        <span id="status-minimax_payg" class="status unset">unset</span>
+      </div>
+      <div class="desc">Pay-as-you-go key (sk-api-...) for T2A voice + embeddings. Token Plan doesn't cover these.</div>
+      <input type="password" id="minimax_payg" placeholder="sk-api-..." autocomplete="off" />
+    </div>
+
+    <div class="field">
+      <div class="label-row">
+        <label for="brave">Brave Search key</label>
+        <span id="status-brave" class="status unset">unset</span>
+      </div>
+      <div class="desc">Brave Search API key. Free tier 2K queries/month at brave.com/search/api/.</div>
+      <input type="password" id="brave" placeholder="BSA..." autocomplete="off" />
+    </div>
+
+    <div class="actions">
+      <button onclick="save()">Save</button>
+      <button class="ghost" onclick="signOut()">Sign out</button>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <div class="subtitle" style="margin:0;">
+      <strong style="color:#e7e8ee;">How resolution works:</strong>
+      For each request, Rocky checks your stored key first, then falls back to
+      the server's env-var defaults. Leave a field blank to keep the existing
+      value; type "clear" to remove a stored key. Stored keys are encrypted
+      with Fernet using the server's TOKEN_ENCRYPTION_KEY.
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = 'rocky_api_token';
+
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+
+async function authedFetch(url, opts = {}) {
+  const t = getToken();
+  if (!t) { showLogin(); throw new Error('no token'); }
+  opts.headers = Object.assign({}, opts.headers, { 'Authorization': `Bearer ${t}` });
+  const r = await fetch(url, opts);
+  if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); throw new Error('unauthorized'); }
+  return r;
+}
+
+function showLogin() { $('login').style.display = 'flex'; $('app').style.display = 'none'; }
+function showApp()   { $('login').style.display = 'none'; $('app').style.display = 'block'; }
+
+async function signIn() {
+  const t = $('token-input').value.trim();
+  if (!t) return;
+  $('login-msg').className = 'msg'; $('login-msg').textContent = 'Validating...';
+  try {
+    const r = await fetch('/api/keys', { headers: { 'Authorization': `Bearer ${t}` } });
+    if (r.ok) { setToken(t); showApp(); refresh(); }
+    else { $('login-msg').className = 'msg err'; $('login-msg').textContent = 'Invalid token.'; }
+  } catch (e) { $('login-msg').className = 'msg err'; $('login-msg').textContent = String(e); }
+}
+
+function signOut() { localStorage.removeItem(TOKEN_KEY); showLogin(); }
+
+async function refresh() {
+  const r = await authedFetch('/api/keys');
+  const data = await r.json();
+  for (const name of ['minimax_chat', 'minimax_payg', 'brave']) {
+    const s = data[name] || {};
+    const el = $('status-' + name);
+    if (s.set) {
+      el.textContent = (s.prefix || '...') + ' (set)';
+      el.className = 'status set';
+    } else {
+      el.textContent = 'using env fallback';
+      el.className = 'status unset';
+    }
+  }
+}
+
+async function save() {
+  const body = {};
+  for (const name of ['minimax_chat', 'minimax_payg', 'brave']) {
+    const v = $(name).value.trim();
+    if (!v) continue;                      // blank → leave unchanged
+    if (v.toLowerCase() === 'clear') body[name] = '';  // explicit clear
+    else body[name] = v;
+  }
+  if (Object.keys(body).length === 0) {
+    $('msg').className = 'msg err'; $('msg').textContent = 'Nothing to save.'; return;
+  }
+
+  $('msg').className = 'msg'; $('msg').textContent = 'Saving...';
+  try {
+    const r = await authedFetch('/api/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    $('msg').className = 'msg ok'; $('msg').textContent = 'Saved.';
+    for (const name of ['minimax_chat', 'minimax_payg', 'brave']) $(name).value = '';
+    refresh();
+  } catch (e) {
+    $('msg').className = 'msg err'; $('msg').textContent = 'Save failed: ' + e;
+  }
+}
+
+if (getToken()) { showApp(); refresh(); } else { showLogin(); }
+$('token-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); });
+</script>
 </body>
 </html>"""
 
@@ -703,6 +999,18 @@ def _dashboard_html(token: str, name: str, server_url: str = "") -> str:
         Say <strong>"Goodbye"</strong> to end a session.
       </div>
     </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Per-user API keys -->
+  <div style="margin: 24px 0;">
+    <div style="font-size: 14px; color: rgba(255,255,255,0.85); margin-bottom: 8px;">
+      Want to bill MiniMax / Brave usage to your own account?
+    </div>
+    <a href="/settings" style="display: inline-block; padding: 10px 18px; background: rgba(255,154,108,0.18); color: #ff9a6c; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 600;">
+      Configure your API keys →
+    </a>
   </div>
 
   <hr class="divider">

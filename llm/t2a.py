@@ -91,16 +91,25 @@ def _endpoint() -> str:
 
 
 def _api_key() -> str:
-    """Prefer a dedicated T2A key (pay-as-you-go) over the main key.
+    """Resolve the T2A key with per-user > env precedence.
+
+    Resolution order:
+      1. Per-user pay-as-you-go key from contextvar (set by main.py at the
+         start of each /api/chat request from the user's encrypted DB row).
+      2. MINIMAX_T2A_API_KEY env (legacy / dev mode).
+      3. MINIMAX_API_KEY env (works only if the user's plan covers T2A).
 
     MiniMax sells text models on Token Plans (subscription) but charges T2A
     on pay-as-you-go — so users typically have two keys: sk-cp-* for chat,
-    sk-api-* for speech. Set MINIMAX_T2A_API_KEY in .env to use them
-    independently. Falls back to MINIMAX_API_KEY when not configured.
+    sk-api-* for speech.
     """
-    key = os.getenv("MINIMAX_T2A_API_KEY") or os.getenv("MINIMAX_API_KEY")
+    from tools._user_keys import resolve_minimax_payg_key
+    key = resolve_minimax_payg_key()
     if not key:
-        raise T2AError("MINIMAX_API_KEY (or MINIMAX_T2A_API_KEY) not set.")
+        raise T2AError(
+            "No MiniMax T2A key. Either set MINIMAX_T2A_API_KEY / MINIMAX_API_KEY in "
+            ".env or configure a per-user pay-as-you-go key via /settings."
+        )
     return key
 
 
