@@ -447,6 +447,25 @@ async def get_keys(user: dict = Depends(get_current_user)):
     return JSONResponse(get_user_keys_status(user["id"]))
 
 
+@app.get("/api/keys/reveal")
+async def reveal_keys(user: dict = Depends(get_current_user)):
+    """Return CLEARTEXT of the user's stored keys.
+
+    Behind same Bearer auth as /api/chat. We accept the disclosure risk:
+    anyone with the API token can already make full MiniMax calls via
+    /api/chat, so showing them the underlying keys doesn't expand the
+    blast radius. Only invoked when the user explicitly clicks the
+    'Reveal' eye button on /settings.
+
+    Unset slots are omitted from the response.
+    """
+    if not user.get("id"):
+        return JSONResponse({})
+    from database import get_user_keys
+    keys = get_user_keys(user["id"])
+    return JSONResponse({k: v for k, v in keys.items() if v})
+
+
 @app.post("/api/keys")
 async def update_keys(req: KeysUpdateRequest, user: dict = Depends(get_current_user)):
     """Update one or more of the user's service keys.
@@ -769,10 +788,23 @@ _SETTINGS_HTML = """<!DOCTYPE html>
   .field:last-child { margin-bottom: 0; }
   .label-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   label { font-size: 14px; font-weight: 600; }
+  .status-row { display: inline-flex; align-items: center; gap: 8px; }
   .status { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11px;
     padding: 3px 8px; border-radius: 4px; }
   .status.set { background: rgba(52,211,153,0.18); color: #34d399; }
   .status.unset { background: rgba(231,232,238,0.08); color: #8b8d9b; }
+  .clear-link {
+    font-size: 11px; color: #ff6b8a; cursor: pointer;
+    padding: 3px 8px; border-radius: 4px; background: rgba(255,107,138,0.10);
+    user-select: none; transition: background 0.12s;
+  }
+  .clear-link:hover { background: rgba(255,107,138,0.22); }
+  .reveal-link {
+    font-size: 13px; color: #8b8d9b; cursor: pointer;
+    padding: 2px 6px; border-radius: 4px;
+    user-select: none; transition: color 0.12s, background 0.12s;
+  }
+  .reveal-link:hover { color: #e7e8ee; background: rgba(255,255,255,0.05); }
   .desc { color: #8b8d9b; font-size: 12px; margin-bottom: 8px; line-height: 1.5; }
   input[type="password"], input[type="text"] {
     width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
@@ -825,7 +857,9 @@ _SETTINGS_HTML = """<!DOCTYPE html>
     <div class="field">
       <div class="label-row">
         <label for="minimax_chat">MiniMax chat key</label>
-        <span id="status-minimax_chat" class="status unset">unset</span>
+        <span id="status-wrap-minimax_chat" class="status-row">
+          <span class="status unset">using env fallback</span>
+        </span>
       </div>
       <div class="desc">Token Plan key (sk-cp-...) for M2.7 chat. Get one at platform.minimax.io.</div>
       <input type="password" id="minimax_chat" placeholder="sk-cp-..." autocomplete="off" />
@@ -834,7 +868,9 @@ _SETTINGS_HTML = """<!DOCTYPE html>
     <div class="field">
       <div class="label-row">
         <label for="minimax_payg">MiniMax pay-as-you-go key</label>
-        <span id="status-minimax_payg" class="status unset">unset</span>
+        <span id="status-wrap-minimax_payg" class="status-row">
+          <span class="status unset">using env fallback</span>
+        </span>
       </div>
       <div class="desc">Pay-as-you-go key (sk-api-...) for T2A voice + embeddings. Token Plan doesn't cover these.</div>
       <input type="password" id="minimax_payg" placeholder="sk-api-..." autocomplete="off" />
@@ -843,7 +879,9 @@ _SETTINGS_HTML = """<!DOCTYPE html>
     <div class="field">
       <div class="label-row">
         <label for="brave">Brave Search key</label>
-        <span id="status-brave" class="status unset">unset</span>
+        <span id="status-wrap-brave" class="status-row">
+          <span class="status unset">using env fallback</span>
+        </span>
       </div>
       <div class="desc">Brave Search API key. Free tier 2K queries/month at brave.com/search/api/.</div>
       <input type="password" id="brave" placeholder="BSA..." autocomplete="off" />
@@ -860,9 +898,9 @@ _SETTINGS_HTML = """<!DOCTYPE html>
     <div class="subtitle" style="margin:0;">
       <strong style="color:#e7e8ee;">How resolution works:</strong>
       For each request, Rocky checks your stored key first, then falls back to
-      the server's env-var defaults. Leave a field blank to keep the existing
-      value; type "clear" to remove a stored key. Stored keys are encrypted
-      with Fernet using the server's TOKEN_ENCRYPTION_KEY.
+      the server's env-var defaults. Click 👁 to reveal a stored key, or
+      Clear to remove it. Type a new value and Save to overwrite. Stored
+      keys are Fernet-encrypted with the server's TOKEN_ENCRYPTION_KEY.
     </div>
   </div>
 </div>
@@ -904,14 +942,85 @@ async function refresh() {
   const data = await r.json();
   for (const name of ['minimax_chat', 'minimax_payg', 'brave']) {
     const s = data[name] || {};
-    const el = $('status-' + name);
+    const wrap = $('status-wrap-' + name);
+    const input = $(name);
+    // Reset reveal state in case user is refreshing after a prior reveal
+    input.type = 'password';
+    input.value = '';
     if (s.set) {
-      el.textContent = (s.prefix || '...') + ' (set)';
-      el.className = 'status set';
+      // Status badge + reveal eye + clear link. We never embed the
+      // cleartext here — it's fetched lazily on Reveal click only.
+      wrap.innerHTML =
+        `<span class="status set">${escapeHtml(s.prefix || '...')} (set)</span>` +
+        ` <span class="reveal-link" data-name="${name}" title="Reveal stored key">👁</span>` +
+        ` <span class="clear-link" data-name="${name}">Clear</span>`;
+      wrap.querySelector('.reveal-link').addEventListener('click',
+        (e) => toggleReveal(e.currentTarget.dataset.name));
+      wrap.querySelector('.clear-link').addEventListener('click',
+        (e) => clearKey(e.currentTarget.dataset.name));
+      input.placeholder = '•••••••••• (type to replace, or click 👁 to reveal)';
     } else {
-      el.textContent = 'using env fallback';
-      el.className = 'status unset';
+      wrap.innerHTML = '<span class="status unset">using env fallback</span>';
+      input.placeholder =
+        name === 'minimax_chat' ? 'sk-cp-...' :
+        name === 'minimax_payg' ? 'sk-api-...' : 'BSA...';
     }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function toggleReveal(name) {
+  const input = $(name);
+  const eye = document.querySelector(`.reveal-link[data-name="${name}"]`);
+  // If currently shown (text type, has fetched value), hide it
+  if (input.type === 'text' && input.dataset.revealed === '1') {
+    input.type = 'password';
+    input.value = '';
+    delete input.dataset.revealed;
+    if (eye) { eye.textContent = '👁'; eye.title = 'Reveal stored key'; }
+    return;
+  }
+  // Else fetch cleartext and show
+  try {
+    const r = await authedFetch('/api/keys/reveal');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const cleartext = data[name];
+    if (!cleartext) {
+      $('msg').className = 'msg err';
+      $('msg').textContent = 'No stored key to reveal.';
+      return;
+    }
+    input.type = 'text';
+    input.value = cleartext;
+    input.dataset.revealed = '1';
+    if (eye) { eye.textContent = '🙈'; eye.title = 'Hide stored key'; }
+  } catch (e) {
+    $('msg').className = 'msg err';
+    $('msg').textContent = `Reveal failed: ${e}`;
+  }
+}
+
+async function clearKey(name) {
+  if (!confirm(`Clear stored ${name} key? Rocky will revert to the operator's env fallback for this slot.`)) return;
+  $('msg').className = 'msg'; $('msg').textContent = 'Clearing...';
+  try {
+    const r = await authedFetch('/api/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [name]: '' }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    $('msg').className = 'msg ok';
+    $('msg').textContent = `Cleared ${name}.`;
+    refresh();
+  } catch (e) {
+    $('msg').className = 'msg err';
+    $('msg').textContent = `Clear failed: ${e}`;
   }
 }
 
