@@ -1,0 +1,42 @@
+# Secrets & personal data
+.env
+.env.bak
+.env.*.bak
+credentials.json
+token.json
+memory.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Database
+rocky.db
+
+# RAG vector store
+chroma_db/
+rag_store/
+
+# T2A audio cache
+audio_cache/
+
+# Deployment
+*.egg-info/
+dist/
+build/
+
+# Claude
+.claude/
+
+# Local diagnostic / one-off scripts (kept on disk but not committed)
+debug_gmail_calendar.py

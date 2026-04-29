@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rocky — Live Dashboard</title>
+<style>
+  /* ---- design tokens ---- */
+  :root {
+    --bg: #0d0d1a;
+    --panel: rgba(255,255,255,0.04);
+    --panel-strong: rgba(255,255,255,0.08);
+    --border: rgba(255,255,255,0.08);
+    --text: #e7e8ee;
+    --muted: rgba(231,232,238,0.55);
+    --dim: rgba(231,232,238,0.32);
+    --accent-1: #FF9A6C;
+    --accent-2: #FF6B8A;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(180deg, #0a0a14 0%, #0d0d1a 30%, #1a1035 100%);
+    color: var(--text);
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 32px 24px;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 28px; gap: 16px; flex-wrap: wrap;
+  }
+  h1 {
+    font-size: 32px; font-weight: 700; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .sub { color: var(--muted); font-size: 14px; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--muted); }
+  .live::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+  /* ---- KPI cards ---- */
+  .kpis {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 24px;
+  }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px 18px;
+  }
+  .kpi-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--dim); margin-bottom: 6px;
+  }
+  .kpi-value { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .kpi-unit { font-size: 13px; color: var(--muted); margin-left: 2px; }
+
+  /* ---- section panels ---- */
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px;
+  }
+  .panel h2 {
+    font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); font-weight: 500; margin-bottom: 14px;
+  }
+
+  /* ---- route bars ---- */
+  .route-row {
+    display: grid; grid-template-columns: 110px 1fr 90px;
+    gap: 10px; align-items: center; padding: 6px 0;
+    font-size: 13px;
+  }
+  .route-name { color: var(--text); font-family: var(--mono); }
+  .route-bar {
+    height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px;
+    overflow: hidden; position: relative;
+  }
+  .route-bar > span {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+    border-radius: 4px; transition: width 0.6s ease;
+  }
+  .route-meta { color: var(--muted); font-family: var(--mono); font-size: 12px;
+    text-align: right; }
+
+  /* ---- traces table ---- */
+  .traces { font-family: var(--mono); font-size: 12px; }
+  .trace-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto;
+    gap: 12px; align-items: center;
+    padding: 8px 10px; border-radius: 8px;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .trace-row:hover { background: var(--panel-strong); }
+  .trace-row + .trace-row { border-top: 1px solid var(--border); }
+  .trace-msg { color: var(--text); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; max-width: 100%; }
+  .badge {
+    padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge-route { background: rgba(96,165,250,0.18); color: var(--blue); }
+  .badge-route.greeting_fastpath { background: rgba(52,211,153,0.18); color: var(--green); }
+  .badge-route.web      { background: rgba(96,165,250,0.18); color: var(--blue); }
+  .badge-route.email    { background: rgba(255,107,138,0.18); color: var(--accent-2); }
+  .badge-route.calendar { background: rgba(255,154,108,0.18); color: var(--accent-1); }
+  .badge-route.memory   { background: rgba(167,139,250,0.18); color: #a78bfa; }
+  .badge-route.knowledge{ background: rgba(251,191,36,0.18); color: var(--amber); }
+  .badge-route.smalltalk{ background: rgba(231,232,238,0.12); color: var(--muted); }
+  .trace-num { color: var(--dim); }
+  .trace-cost { color: var(--accent-1); }
+  .trace-ms { color: var(--muted); }
+
+  /* ---- trace detail drawer ---- */
+  .drawer-wrap { display: none; }
+  .drawer-wrap.open { display: block; }
+  .drawer-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(6px); z-index: 80;
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(620px, 92vw);
+    background: #11121f; border-left: 1px solid var(--border);
+    padding: 28px; overflow-y: auto; z-index: 90;
+  }
+  .drawer h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  .drawer .user-msg {
+    font-size: 18px; font-weight: 500; margin-bottom: 4px;
+  }
+  .drawer .reply {
+    color: var(--muted); font-size: 14px; line-height: 1.5;
+    margin: 18px 0; padding: 14px; background: var(--panel);
+    border-radius: 10px; border-left: 3px solid var(--accent-1);
+  }
+  .drawer-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; margin: 14px 0;
+  }
+  .drawer-stat {
+    padding: 10px 12px; background: var(--panel); border-radius: 10px;
+  }
+  .drawer-stat-label { font-size: 10px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.06em; }
+  .drawer-stat-value { font-size: 16px; font-weight: 600; margin-top: 2px;
+    font-family: var(--mono); }
+  .span-list { list-style: none; padding: 0; margin: 14px 0 0; }
+  .span-row {
+    display: grid; grid-template-columns: auto 1fr auto auto;
+    gap: 10px; align-items: center;
+    padding: 10px 12px; background: var(--panel); border-radius: 10px;
+    margin-bottom: 6px; font-family: var(--mono); font-size: 12px;
+  }
+  .span-row.error { background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.3); }
+  .span-kind {
+    padding: 1px 7px; border-radius: 3px; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .span-kind.agent { background: rgba(255,107,138,0.18); color: var(--accent-2); }
+  .span-kind.llm   { background: rgba(96,165,250,0.18); color: var(--blue); }
+  .span-kind.tool  { background: rgba(167,139,250,0.18); color: #a78bfa; }
+  .span-kind.rag   { background: rgba(251,191,36,0.18); color: var(--amber); }
+  .span-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .span-meta { color: var(--muted); font-size: 11px; }
+  .span-attrs {
+    grid-column: 1 / -1; margin-top: 6px; padding-top: 6px;
+    border-top: 1px dashed var(--border);
+    color: var(--dim); font-size: 11px; word-break: break-all;
+  }
+  .close-btn {
+    position: absolute; top: 18px; right: 18px;
+    width: 32px; height: 32px; border-radius: 8px; border: none;
+    background: var(--panel-strong); color: var(--text); cursor: pointer;
+    font-size: 16px;
+  }
+  .close-btn:hover { background: rgba(255,255,255,0.18); }
+
+  /* ---- tester widget ---- */
+  .tester { margin-top: 20px; }
+  .tester input {
+    width: 100%; padding: 14px 16px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; color: var(--text); font-size: 14px;
+    font-family: inherit;
+  }
+  .tester input:focus { outline: none; border-color: var(--accent-1); }
+  .tester .hint { color: var(--dim); font-size: 11px; margin-top: 8px;
+    font-family: var(--mono); }
+
+  .empty {
+    text-align: center; color: var(--dim); font-size: 13px;
+    padding: 28px 12px; font-style: italic;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Rocky</h1>
+      <div class="sub">Live agent dashboard · MiniMax-M2.7 · Brave Search</div>
+    </div>
+    <div class="live" id="live">connected · refreshing every 2s</div>
+  </header>
+
+  <!-- KPIs -->
+  <section class="kpis">
+    <div class="kpi"><div class="kpi-label">Requests</div><div class="kpi-value" id="kpi-requests">—</div></div>
+    <div class="kpi"><div class="kpi-label">Total cost</div><div class="kpi-value">$<span id="kpi-cost">—</span></div></div>
+    <div class="kpi"><div class="kpi-label">Avg latency</div><div class="kpi-value" id="kpi-avg-ms">—<span class="kpi-unit">ms</span></div></div>
+    <div class="kpi"><div class="kpi-label">P95 latency</div><div class="kpi-value" id="kpi-p95-ms">—<span class="kpi-unit">ms</span></div></div>
+  </section>
+
+  <!-- Two-column: routes + traces -->
+  <section class="grid">
+
+    <div class="panel">
+      <h2>Route distribution</h2>
+      <div id="routes"><div class="empty">No requests yet</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>By model</h2>
+      <div id="models"><div class="empty">No model calls yet</div></div>
+    </div>
+
+  </section>
+
+  <!-- Traces -->
+  <section class="panel" style="margin-top: 20px;">
+    <h2>Recent traces · click for details</h2>
+    <div id="traces" class="traces"><div class="empty">Send a message to see traces</div></div>
+  </section>
+
+  <!-- Tester -->
+  <section class="panel tester">
+    <h2>Try it</h2>
+    <form id="tester-form">
+      <input id="tester-input" type="text"
+             placeholder='Try: "what is the weather in tokyo" or "remember I prefer tea over coffee"' />
+    </form>
+    <div class="hint">⌘+Enter to send · TTS off (text only — pure pipeline view)</div>
+  </section>
+
+</div>
+
+<!-- Drawer -->
+<div class="drawer-wrap" id="drawer-wrap">
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="drawer">
+    <button class="close-btn" id="close-drawer">✕</button>
+    <h3>Trace</h3>
+    <div class="user-msg" id="d-msg">—</div>
+    <div class="sub" id="d-meta">—</div>
+    <div class="drawer-stats">
+      <div class="drawer-stat"><div class="drawer-stat-label">Duration</div>
+        <div class="drawer-stat-value" id="d-duration">—</div></div>
+      <div class="drawer-stat"><div class="drawer-stat-label">Cost</div>
+        <div class="drawer-stat-value" id="d-cost">—</div></div>
+      <div class="drawer-stat"><div class="drawer-stat-label">Tokens</div>
+        <div class="drawer-stat-value" id="d-tokens">—</div></div>
+    </div>
+    <h3 style="margin-top:18px;">Reply</h3>
+    <div class="reply" id="d-reply">—</div>
+    <h3 style="margin-top:18px;">Spans</h3>
+    <ul class="span-list" id="d-spans"></ul>
+  </aside>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+// Cap renders for sanity
+const MAX_TRACES_RENDER = 30;
+
+let lastTracesJson = '';
+let lastMetricsJson = '';
+
+async function refresh() {
+  try {
+    const [m, t] = await Promise.all([
+      fetch('/metrics').then(r => r.json()),
+      fetch('/traces?limit=50').then(r => r.json()),
+    ]);
+    if (JSON.stringify(m) !== lastMetricsJson) {
+      renderMetrics(m); lastMetricsJson = JSON.stringify(m);
+    }
+    if (JSON.stringify(t) !== lastTracesJson) {
+      renderTraces(t.traces || []); lastTracesJson = JSON.stringify(t);
+    }
+    $('live').classList.remove('error');
+  } catch (e) {
+    $('live').textContent = 'connection lost · retrying';
+  }
+}
+
+function renderMetrics(m) {
+  $('kpi-requests').textContent = (m.total_requests ?? 0).toLocaleString();
+  $('kpi-cost').textContent = (m.total_cost_usd ?? 0).toFixed(5);
+  $('kpi-avg-ms').innerHTML = (m.avg_latency_ms ?? 0).toLocaleString() + '<span class="kpi-unit">ms</span>';
+  $('kpi-p95-ms').innerHTML = (m.p95_latency_ms ?? 0).toLocaleString() + '<span class="kpi-unit">ms</span>';
+
+  // Routes
+  const routes = m.by_route || {};
+  const entries = Object.entries(routes).sort((a, b) => b[1].requests - a[1].requests);
+  if (entries.length === 0) {
+    $('routes').innerHTML = '<div class="empty">No requests yet</div>';
+  } else {
+    const max = Math.max(...entries.map(([, v]) => v.requests));
+    $('routes').innerHTML = entries.map(([name, v]) => {
+      const pct = max > 0 ? (v.requests / max) * 100 : 0;
+      return `
+        <div class="route-row">
+          <span class="route-name">${name}</span>
+          <div class="route-bar"><span style="width:${pct}%"></span></div>
+          <span class="route-meta">${v.requests} · $${v.cost_usd.toFixed(5)}</span>
+        </div>`;
+    }).join('');
+  }
+
+  // Models
+  const models = m.by_model || {};
+  const mEntries = Object.entries(models);
+  if (mEntries.length === 0) {
+    $('models').innerHTML = '<div class="empty">No model calls yet</div>';
+  } else {
+    $('models').innerHTML = mEntries.map(([name, v]) => `
+      <div class="route-row">
+        <span class="route-name">${name}</span>
+        <span class="route-meta">${v.calls} calls · ${v.tokens.toLocaleString()} tokens</span>
+        <span class="route-meta">$${v.cost_usd.toFixed(5)}</span>
+      </div>
+    `).join('');
+  }
+}
+
+function renderTraces(traces) {
+  if (traces.length === 0) {
+    $('traces').innerHTML = '<div class="empty">Send a message to see traces</div>';
+    return;
+  }
+  $('traces').innerHTML = traces.slice(0, MAX_TRACES_RENDER).map(t => `
+    <div class="trace-row" data-id="${t.trace_id}">
+      <span class="trace-msg" title="${escapeHtml(t.user_message)}">${escapeHtml(t.user_message)}</span>
+      <span class="badge badge-route ${t.route || 'unknown'}">${t.route || 'unknown'}</span>
+      <span class="trace-ms">${(t.duration_ms || 0).toLocaleString()}ms</span>
+      <span class="trace-cost">$${(t.total_cost_usd || 0).toFixed(5)}</span>
+      <span class="trace-num">${t.trace_id.slice(0, 6)}</span>
+    </div>`).join('');
+
+  document.querySelectorAll('.trace-row').forEach(el => {
+    el.addEventListener('click', () => openTrace(el.dataset.id));
+  });
+}
+
+async function openTrace(traceId) {
+  const t = await fetch(`/trace/${traceId}`).then(r => r.json());
+  $('d-msg').textContent = t.user_message || '—';
+  $('d-meta').innerHTML = `<span class="badge badge-route ${t.route || 'unknown'}">${t.route || 'unknown'}</span> · ${t.trace_id}`;
+  $('d-duration').textContent = (t.duration_ms || 0).toLocaleString() + ' ms';
+  $('d-cost').textContent = '$' + (t.total_cost_usd || 0).toFixed(5);
+  $('d-tokens').textContent = (t.total_tokens || 0).toLocaleString();
+  $('d-reply').textContent = t.final_reply || '(no reply)';
+  $('d-spans').innerHTML = (t.spans || []).map(s => `
+    <li class="span-row ${s.error ? 'error' : ''}">
+      <span class="span-kind ${s.kind}">${s.kind}</span>
+      <span class="span-name">${s.name}</span>
+      <span class="span-meta">${s.duration_ms || 0}ms</span>
+      <span class="span-meta">${s.attributes && s.attributes.tokens ? s.attributes.tokens + ' tok' : ''}</span>
+      ${s.error ? `<div class="span-attrs">⚠ ${escapeHtml(s.error)}</div>` :
+        Object.keys(s.attributes || {}).length > 0 ?
+          `<div class="span-attrs">${formatAttrs(s.attributes)}</div>` : ''}
+    </li>
+  `).join('');
+  $('drawer-wrap').classList.add('open');
+}
+
+function formatAttrs(attrs) {
+  return Object.entries(attrs).map(([k, v]) => {
+    if (typeof v === 'number' && v < 1 && k.includes('cost')) v = '$' + v.toFixed(6);
+    return `${k}=${v}`;
+  }).join(' · ');
+}
+
+function closeDrawer() { $('drawer-wrap').classList.remove('open'); }
+$('close-drawer').addEventListener('click', closeDrawer);
+$('drawer-backdrop').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Tester
+$('tester-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('tester-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.disabled = true;
+  try {
+    await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, user_id: 'dashboard', tts: false }),
+    });
+    input.value = '';
+    refresh();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+});
+
+// Initial + interval
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

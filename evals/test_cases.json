@@ -1,0 +1,134 @@
+[
+  {
+    "id": "route-email-01",
+    "kind": "route_only",
+    "input": "what new emails do I have today",
+    "expect_route": "email"
+  },
+  {
+    "id": "route-email-02",
+    "kind": "route_only",
+    "input": "reply to Sarah saying I'll be there",
+    "expect_route": "email"
+  },
+  {
+    "id": "route-email-03",
+    "kind": "route_only",
+    "input": "archive that last email",
+    "expect_route": "email"
+  },
+  {
+    "id": "route-calendar-01",
+    "kind": "route_only",
+    "input": "what is on my schedule for tomorrow",
+    "expect_route": "calendar"
+  },
+  {
+    "id": "route-calendar-02",
+    "kind": "route_only",
+    "input": "add a team standup on Friday at 10am",
+    "expect_route": "calendar"
+  },
+  {
+    "id": "route-calendar-03",
+    "kind": "route_only",
+    "input": "remind me to call mom at 5pm",
+    "expect_route": "calendar"
+  },
+  {
+    "id": "route-knowledge-01",
+    "kind": "route_only",
+    "input": "what did Sarah say about the contract last month",
+    "expect_route": "knowledge"
+  },
+  {
+    "id": "route-knowledge-02",
+    "kind": "route_only",
+    "input": "find any email mentioning the Q3 review",
+    "expect_route": "knowledge"
+  },
+  {
+    "id": "e2e-memory-save",
+    "kind": "end_to_end",
+    "input": "remember that I prefer morning meetings",
+    "expect_route": "memory",
+    "expect_tool_calls": ["save_memory"],
+    "expect_text_contains": ["morning"]
+  },
+  {
+    "id": "e2e-memory-forget",
+    "kind": "end_to_end",
+    "input": "forget my coffee preference",
+    "expect_route": "memory",
+    "expect_tool_calls": ["delete_memory"]
+  },
+  {
+    "id": "e2e-memory-save-canonical",
+    "kind": "end_to_end",
+    "input": "remember that I'm vegetarian",
+    "expect_route": "memory",
+    "expect_tool_calls": ["save_memory"],
+    "expect_text_contains": ["vegetarian"]
+  },
+  {
+    "id": "e2e-memory-save-context",
+    "kind": "end_to_end",
+    "input": "remember that I work at Anthropic",
+    "expect_route": "memory",
+    "expect_tool_calls": ["save_memory"]
+  },
+  {
+    "id": "e2e-web-weather",
+    "kind": "end_to_end",
+    "input": "what is the weather in london right now",
+    "expect_route": "web",
+    "expect_tool_calls": ["web_search"]
+  },
+  {
+    "id": "e2e-web-distance",
+    "kind": "end_to_end",
+    "input": "how long does it take to drive from London to Manchester",
+    "expect_route": "web",
+    "expect_tool_calls": ["web_search"]
+  },
+  {
+    "id": "e2e-web-news",
+    "kind": "end_to_end",
+    "input": "what is the latest news about artificial intelligence",
+    "expect_route": "web",
+    "expect_tool_calls": ["web_search"]
+  },
+  {
+    "id": "e2e-smalltalk-fact",
+    "kind": "end_to_end",
+    "input": "tell me a fun fact about octopuses",
+    "expect_route": "smalltalk",
+    "expect_text_contains": ["octopus"]
+  },
+  {
+    "id": "e2e-smalltalk-thanks",
+    "kind": "end_to_end",
+    "input": "thanks for that, you're great",
+    "expect_route": "smalltalk"
+  },
+  {
+    "id": "e2e-greeting-fast",
+    "kind": "end_to_end",
+    "input": "hi rocky",
+    "expect_route": "greeting_fastpath",
+    "max_cost_usd": 0.0
+  },
+  {
+    "id": "e2e-greeting-fast-2",
+    "kind": "end_to_end",
+    "input": "good morning",
+    "expect_route": "greeting_fastpath",
+    "max_cost_usd": 0.0
+  },
+  {
+    "id": "route-ambiguous-01",
+    "kind": "route_only",
+    "input": "tell me what's coming up",
+    "expect_route_any": ["calendar", "email", "smalltalk"]
+  }
+]

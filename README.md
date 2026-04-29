@@ -1,0 +1,252 @@
+# Rocky — Multi-Agent Voice Assistant on MiniMax
+
+> **"Hi Rocky, what's on my schedule tomorrow?"** — He answers.
+> **"Reply to Sarah saying I'll be there at 3."** — Done, threaded properly.
+> **"What did Sarah say last month about the contract?"** — Semantic search over past emails.
+> **"What's the weather in London?"** — Live web search via Brave.
+
+Rocky is a voice-first personal assistant built on a **multi-agent architecture** with **MiniMax-M2.7** as the brain. Powered by Gmail, Google Calendar, Brave Search, and a local RAG knowledge base over the user's email history. Voice synthesis (with optional voice cloning) via MiniMax T2A.
+
+---
+
+## Highlights
+
+| | Rocky |
+|---|---|
+| LLM | **MiniMax-M2.7** (OpenAI-compatible API) |
+| Web search | **Brave Search API** (independent index, AI-Grounding endpoint) |
+| Architecture | **Router → 5 specialist agents** (email, calendar, web, memory, knowledge) |
+| Tool registration | **Versioned OpenAI tool schemas** (`tools/schemas.py`) |
+| Prompts | **6 versioned prompts** (`prompts/v1/*.md`, `PROMPT_VERSION` env to swap) |
+| RAG | **Email semantic search** via MiniMax embo-02 + numpy vector store |
+| Voice | **MiniMax speech-02 T2A** with optional voice cloning (returns `audio_url`) |
+| Observability | **Per-request traces, /metrics, live web dashboard** |
+| Eval | **20-case eval suite** with routing / tool-call / latency / cost metrics |
+
+---
+
+## Architecture
+
+```
+                   iPhone — "Hi Rocky" voice trigger
+                                    ↓
+                        POST /api/chat  {message, tts: true}
+                                    ↓
+                          Auth + Session (PG, multi-user)
+                                    ↓
+                       ┌────────── Router ──────────┐
+                       │  agents/router.py          │
+                       │  Heuristics first (0¢/0ms) │
+                       │  LLM fallback (M2.7, JSON) │
+                       └────────────┬───────────────┘
+                                    │
+   ┌────────────┬────────────┬──────┴──────┬─────────────┬───────────────┐
+   ↓            ↓            ↓             ↓             ↓               ↓
+ Greeting    Email        Calendar       Web           Memory        Knowledge
+ FastPath    Agent        Agent          Agent         Agent         (RAG)
+ (no LLM)    │            │              │             │              │
+             Gmail API    Calendar API   Brave Search  user memory    numpy store
+             5 tools      5 tools        AI Grounding  save/forget    embo-02 search
+                                    │
+                                    ↓ final reply text
+                       ┌──── MiniMax speech-02 T2A ────┐
+                       │  llm/t2a.py                   │
+                       │  Returns audio_url            │
+                       └───────────────────────────────┘
+                                    ↓
+              { reply, audio_url, route, cost_usd, trace_id }
+                                    ↓
+              iOS Shortcut plays audio_url + repeats loop
+```
+
+**Data flow surfaces:**
+- `POST /api/chat` — voice command in, structured reply + audio out
+- `GET /audio/{id}` — serves generated mp3 (1h TTL, auto-cleanup)
+- `GET /dashboard` — live observability UI (KPIs, route distribution, trace drilldown)
+- `GET /metrics` — JSON aggregate for Prometheus-style scrapers
+- `GET /trace/{id}` — single-request span tree
+- `GET /login` → `/setup` — Google OAuth multi-user signup
+- `python -m evals.run` — eval suite for prompt/model regression testing
+
+---
+
+## Project layout
+
+```
+rocky/
+├── main.py                        FastAPI server, OAuth, /api/chat, /dashboard, /metrics
+├── agents/                        Multi-agent orchestration
+│   ├── orchestrator.py              Router → specialist dispatch + greeting fast path
+│   ├── router.py                    Routing decision (heuristic + LLM fallback)
+│   ├── base.py                      Agent base class (LLM call + tracing + tool exec)
+│   ├── email_agent.py               Gmail specialist
+│   ├── calendar_agent.py            Calendar specialist
+│   ├── web_agent.py                 Brave Search specialist
+│   ├── memory_agent.py              save_fact / delete_fact specialist
+│   ├── knowledge_agent.py           RAG email search specialist
+│   └── _context.py                  Shared system-prompt context renderer
+├── llm/
+│   ├── minimax.py                   OpenAI-compatible client + cost calc + <think> stripping
+│   ├── embedding.py                 MiniMax embo-02 (RAG vectorisation)
+│   └── t2a.py                       MiniMax speech-02 voice synthesis
+├── tools/
+│   ├── schemas.py                   14 OpenAI-format tool schemas
+│   ├── registry.py                  Tool implementation wrappers (contextvars-threaded creds)
+│   ├── _credentials.py              Per-request credential isolation
+│   ├── brave_search.py              Brave AI-Grounding + fallback
+│   ├── gmail_tools.py               Gmail HTTP API wrappers (unchanged from upstream)
+│   └── calendar_tools.py            Calendar HTTP API wrappers (unchanged from upstream)
+├── rag/
+│   ├── email_indexer.py             Gmail backfill into vector store
+│   └── email_store.py               numpy + JSON persistent vector index
+├── tracing/tracer.py              Per-request Trace + Span model, ring buffer
+├── metrics/cost.py                Aggregation across traces
+├── prompts/v1/                    Versioned prompts (router + 5 specialists)
+│   ├── router.md
+│   ├── email.md  calendar.md  web.md  memory.md  knowledge.md
+│   └── loader.py                  PROMPT_VERSION env → swap whole set
+├── evals/
+│   ├── test_cases.json              20 cases (routing + e2e)
+│   └── run.py                       CLI runner with scorecard
+├── dashboard.html                 Single-file live UI
+├── auth.py                        Google OAuth credential management
+├── database.py                    PostgreSQL multi-user store + Fernet token encryption
+├── memory.py                      Long-term user memory (contacts + facts)
+├── session.py                     2-hour TTL conversation history
+└── requirements.txt
+```
+
+---
+
+## Quick start
+
+### 1. Clone, install
+
+```bash
+git clone <this repo>
+cd rocky
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Get API keys
+
+| | Where | Note |
+|---|---|---|
+| **MiniMax** | [https://platform.minimax.io](https://platform.minimax.io) | Token Plan key (`sk-cp-...`) for chat. Optional pay-as-you-go key (`sk-api-...`) for T2A if your plan doesn't include speech. |
+| **Brave Search** | [https://brave.com/search/api](https://brave.com/search/api) | Free tier 2K queries/month. |
+
+### 3. Configure
+
+```bash
+cp .env.example .env
+# Edit .env — at minimum set MINIMAX_API_KEY and BRAVE_API_KEY
+```
+
+For Gmail / Calendar (optional — chat / web / memory / knowledge work without it):
+- Set up Google Cloud OAuth (consent screen, credentials, etc. — see upstream README)
+- Either drop `token.json` for legacy single-user mode, or use `/login` for multi-user OAuth
+
+### 4. Run
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+- **Dashboard**: http://localhost:8000/dashboard — try messages directly
+- **Health**: http://localhost:8000/health
+- **OAuth signup**: http://localhost:8000/login
+
+### 5. Eval suite
+
+```bash
+python -m evals.run                  # all 20 cases
+python -m evals.run --kind route_only  # routing only (fast, cheap)
+python -m evals.run --case e2e-web-weather  # one case
+```
+
+---
+
+## Key technical decisions
+
+### 1. Router with heuristic short-circuit (`agents/router.py`)
+
+Most requests hit a regex-classified heuristic that picks the route in **0ms with 0 tokens**. Only ambiguous messages cost a router LLM call. Measured on the eval suite: 7/9 routing decisions skip the LLM entirely.
+
+### 2. OpenAI-compatible MiniMax client (`llm/minimax.py`)
+
+MiniMax exposes an OpenAI-compatible endpoint at `https://api.minimax.io/v1`. We use the `openai` SDK with `base_url` override — gives us function calling, message format, and tool schemas for free. M2.7 is a reasoning model emitting `<think>...</think>` blocks; `strip_think()` removes them from user-facing content but preserves them in traces for debugging.
+
+### 3. Per-request credentials via `contextvars` (`tools/_credentials.py`)
+
+Each `/api/chat` request sets the current user's Google credentials in a `ContextVar`; tool functions read from there. No need to thread `credentials=` through every agent and tool.
+
+### 4. Versioned prompts (`prompts/v1/*.md`)
+
+Six markdown files, one per agent. The `prompts/loader.py` substitutes a `{context}` block (current time + user memory) into each. Set `PROMPT_VERSION=v2` in `.env` to swap to a new set without code changes — useful for prompt A/B without redeploys.
+
+### 5. Two MiniMax keys for two billing models
+
+Token Plan keys (`sk-cp-...`) cover text models cheaply under subscription quota. Speech models are usually pay-as-you-go (`sk-api-...`). `MINIMAX_T2A_API_KEY` env var lets you split them — chat goes through Token Plan, T2A through pay-as-you-go.
+
+### 6. Vector store: numpy over Chroma
+
+For ≤2K emails per user, a flat cosine search over a numpy matrix is sub-millisecond and has zero compile dependencies. Chroma's tokenizer dependency requires Rust on Python 3.14. The `rag/email_store.py` interface is kept generic — swap to Chroma / FAISS later if scale demands.
+
+### 7. Two-key fallback architecture for graceful degradation
+
+Each external dependency (MiniMax chat, MiniMax T2A, Brave, Gmail, Calendar) fails independently. Failures are caught and logged; the user gets at minimum a text reply. Examples:
+- T2A fails → `audio_url=null`, iOS plays Siri TTS
+- Brave fails → web_agent returns "couldn't reach search service"
+- Gmail expired → email_agent surfaces a polite re-auth prompt
+
+### 8. Tracing as a first-class primitive (`tracing/tracer.py`)
+
+Every `/api/chat` opens a Trace; every LLM call, tool invocation, and routing decision is a Span. Stored in a 200-trace ring buffer in memory (no DB dependency). The dashboard polls `/traces` every 2s for live updates. Each span records `cost_usd`, `tokens`, `latency_ms`, and tool-specific metadata.
+
+---
+
+## Eval results (last run)
+
+```
+============================================================
+  Eval scorecard — 20/20 passed (100%)
+============================================================
+  route_only   9/9    avg  3628ms  cost $0.00043
+  end_to_end   11/11  avg  8032ms  cost $0.00498
+  overall      20/20  avg  6043ms  cost $0.00541  tokens 13,163
+```
+
+- **Routing accuracy: 100%** (heuristic short-circuit handles 78% of cases at zero cost)
+- **End-to-end pass rate: 100%** across web search / memory / smalltalk / greeting paths
+- **P95 latency: ~14s** (M2.7 is a reasoning model — 5–10s thinking + tool round-trip is normal; streaming would cut perceived latency to <3s)
+
+Run `python -m evals.run` to reproduce.
+
+---
+
+## Tech stack
+
+- **LLM**: MiniMax-M2.7 (released 2026-03-18, $0.30/$1.20 per 1M in/out)
+- **Embeddings**: MiniMax embo-02 (1024-dim)
+- **Voice**: MiniMax speech-02-hd (optional, with voice cloning support)
+- **Search**: Brave Search API (AI-Grounding endpoint)
+- **Backend**: FastAPI + Uvicorn (Python 3.12+)
+- **Auth**: Google OAuth2 (Gmail.modify + Calendar scopes), Fernet-encrypted refresh tokens
+- **Storage**: PostgreSQL (users, encrypted tokens), local JSON (memory), numpy (RAG)
+- **Front-end**: iOS Shortcut for voice, single-file HTML dashboard for ops
+
+---
+
+## Roadmap (deferred from this iteration)
+
+- **Voice cloning** — record a 30-second sample, upload to MiniMax, get a custom `voice_id`. Rocky speaks in that voice.
+- **Streaming** — stream M2.7 token-by-token to T2A so the user hears the start of the reply within ~1s.
+- **Smaller router model** — drop the LLM router fallback to a cheaper non-reasoning model (e.g. abab6.5s-chat) for faster ambiguous routing.
+
+---
+
+## License
+
+MIT — same as upstream.
