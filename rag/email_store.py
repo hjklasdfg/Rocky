@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from llm.embedding import embed, embed_one
+from llm.embedding import PROVIDER as _EMBED_PROVIDER, embed, embed_one
 from tracing.tracer import current_trace
 
 STORE_DIR = Path(os.getenv("RAG_STORE_PATH", "./rag_store"))
@@ -151,19 +151,26 @@ def upsert_emails(emails: list[dict], user_id: str | None = None) -> int:
     if not docs:
         return 0
 
-    # Token Plan keys (sk-cp-) don't cover embeddings — they fall under the
-    # most restrictive default RPM (~5-10/min). We pace the loop conservatively
-    # so even users without a sk-api- pay-as-you-go key can complete a backfill
-    # eventually. embed() retries with 30s+ backoff if RPM is still hit.
-    BATCH = 8
-    INTER_BATCH_SLEEP = 4.0  # seconds — keeps avg below ~15 RPM
+    # Pacing depends on provider:
+    # - 'local' (sentence-transformers): no rate limits, just chew through —
+    #   bigger batches help amortize tensor setup cost.
+    # - 'minimax': RPM-gated, keep batches small with inter-batch sleeps so
+    #   avg request rate stays well under the 60s window.
+    # - 'openai': no aggressive rate limits at our volume; default to fast.
+    if _EMBED_PROVIDER == "minimax":
+        BATCH = 8
+        INTER_BATCH_SLEEP = 4.0  # seconds — keeps avg below ~15 RPM
+    else:
+        BATCH = 64
+        INTER_BATCH_SLEEP = 0.0
+
     new_vecs: list[list[float]] = []
     import time as _time
     total_batches = (len(docs) + BATCH - 1) // BATCH
     for batch_i, i in enumerate(range(0, len(docs), BATCH), start=1):
-        print(f"[email_store] embedding batch {batch_i}/{total_batches} ({len(docs[i:i + BATCH])} docs)")
+        print(f"[email_store] embedding batch {batch_i}/{total_batches} ({len(docs[i:i + BATCH])} docs) via {_EMBED_PROVIDER}")
         new_vecs.extend(embed(docs[i:i + BATCH], purpose="db"))
-        if i + BATCH < len(docs):
+        if INTER_BATCH_SLEEP and i + BATCH < len(docs):
             _time.sleep(INTER_BATCH_SLEEP)
     new_matrix = np.asarray(new_vecs, dtype=np.float32)
 

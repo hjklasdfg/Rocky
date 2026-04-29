@@ -9,3 +9,7 @@ psycopg2-binary==2.9.12
 cryptography==44.0.0
 requests==2.32.3
 numpy>=1.26
+# Local embedding provider — runs RAG vectors on-device with no API quota.
+# ~700MB install (pulls torch); set EMBEDDING_PROVIDER=minimax/openai to skip
+# loading sentence-transformers if you don't need local RAG.
+sentence-transformers>=3.0.0
