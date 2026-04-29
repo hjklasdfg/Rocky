@@ -435,6 +435,15 @@ async def debug_clear_sessions():
 
 # --- OAuth routes ---
 
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Smart landing — returning users (token in localStorage) go straight to
+    /dashboard; new visitors land on /login. Rendered as a tiny HTML page
+    rather than a server-side redirect because we need to check localStorage,
+    which only the browser can see."""
+    return HTMLResponse(_ROOT_HTML)
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
     """Serve the login page with Sign in with Google button."""
@@ -584,6 +593,21 @@ async def settings_page():
 
 
 # --- HTML Templates ---
+
+_ROOT_HTML = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Rocky</title>
+<style>body{background:#0d0d1a;color:#fff;font-family:-apple-system,'Segoe UI',sans-serif;
+display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;
+font-size:14px;color:rgba(255,255,255,0.6);}</style></head>
+<body>Routing…
+<script>
+// Has the user authenticated before? Send them straight to dashboard.
+// Otherwise kick them to /login. Done client-side so localStorage is visible.
+const t = localStorage.getItem('rocky_api_token');
+location.replace(t ? '/dashboard' : '/login');
+</script>
+</body></html>"""
+
 
 _LOGIN_HTML = """<!DOCTYPE html>
 <html>
@@ -864,10 +888,11 @@ def _dashboard_html(token: str, name: str, server_url: str = "", needs_keys: boo
   <div class="byok-alert">
     <div class="byok-alert-icon">⚠</div>
     <div class="byok-alert-body">
-      <div class="byok-alert-title">One step before you start</div>
+      <div class="byok-alert-title">Now configure your API keys</div>
       <div class="byok-alert-desc">
-        Rocky needs your own MiniMax API key to chat — the operator's
-        keys are reserved for them. It takes one minute.
+        With the token above, set your own MiniMax + Brave keys at the
+        link below. Rocky uses your keys so usage bills to your account,
+        not the operator's. Takes one minute.
       </div>
       <a class="byok-alert-cta" href="/settings">Configure API keys →</a>
     </div>
@@ -1002,7 +1027,7 @@ def _dashboard_html(token: str, name: str, server_url: str = "", needs_keys: boo
 </head>
 <body>
 <div class="container">
-{needs_keys_banner}
+
   <!-- Header -->
   <div class="header">
     <div class="logo">Rocky</div>
@@ -1021,7 +1046,7 @@ def _dashboard_html(token: str, name: str, server_url: str = "", needs_keys: boo
       </div>
     </div>
   </div>
-
+{needs_keys_banner}
   <!-- Step 2: Download Shortcuts -->
   <div class="step">
     <div class="step-num">2</div>
