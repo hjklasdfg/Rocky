@@ -338,6 +338,7 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             audio_url = f"/audio/{result.filename}"
             audio_voice = result.voice_id
             tts_span.end(
+                model=result.model,
                 voice=result.voice_id,
                 bytes=result.audio_bytes,
                 latency_ms=result.duration_ms,
