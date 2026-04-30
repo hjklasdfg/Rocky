@@ -57,7 +57,7 @@ def _strip_markdown_for_speech(text: str) -> str:
 # "English_expressive_narrator" is a built-in MiniMax preset — warm, friendly,
 # good for assistant-style replies. Override with your own cloned voice_id later.
 DEFAULT_VOICE = os.getenv("MINIMAX_VOICE_ID", "English_expressive_narrator")
-DEFAULT_MODEL = os.getenv("MINIMAX_T2A_MODEL", "speech-02-hd")
+DEFAULT_MODEL = os.getenv("MINIMAX_T2A_MODEL", "speech-2.8-hd")
 
 # Audio cache — generated files stored here, served via /audio/{filename} in main.py.
 AUDIO_DIR = Path(os.getenv("AUDIO_CACHE_DIR", "./audio_cache"))
