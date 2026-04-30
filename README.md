@@ -21,7 +21,7 @@ Rocky fills the gap between Siri (voice but no LLM) and ChatGPT (smart but no in
 | Tool registration | **Versioned OpenAI tool schemas** (`tools/schemas.py`) |
 | Prompts | **6 versioned prompts** (`prompts/v1/*.md`, `PROMPT_VERSION` env to swap) |
 | RAG | **Local vector store** (sentence-transformers + numpy) over 6 months of email via Gmail OAuth. Store layer is source-agnostic — adding more OAuth-able sources (Notion, GDrive, Slack) is a ~30-line indexer + OAuth wiring; truly-local files would require an upload endpoint or a per-user sync agent |
-| Voice | **MiniMax speech-02 T2A** + voice cloning (returns `audio_url`); BYOK rejection prompt is pre-synthesised once and reused |
+| Voice | **MiniMax speech-2.8-hd** T2A + voice cloning (returns `audio_url`); BYOK rejection prompt is pre-synthesised once and reused |
 | Multi-tenant | **Per-user MiniMax / Brave keys** (BYOK), Fernet-encrypted in PG, ContextVar-injected per request; operator allowlist gives a free-pass pool |
 | Observability | **Per-request traces** (incl. BYOK rejections), `/metrics`, live `/dashboard` |
 | Eval | **20-case eval suite** with routing / tool-call / latency / cost metrics |
@@ -52,7 +52,7 @@ Rocky fills the gap between Siri (voice but no LLM) and ChatGPT (smart but no in
              5 tools      5 tools        AI Grounding  save/forget    embo-02 search
                                     │
                                     ↓ final reply text
-                       ┌──── MiniMax speech-02 T2A ────┐
+                       ┌─── MiniMax speech-2.8-hd T2A ───┐
                        │  llm/t2a.py                   │
                        │  Returns audio_url            │
                        └───────────────────────────────┘
@@ -91,7 +91,7 @@ rocky/
 ├── llm/
 │   ├── minimax.py                   OpenAI-compatible client + cost calc + <think> stripping
 │   ├── embedding.py                 MiniMax embo-02 (RAG vectorisation)
-│   └── t2a.py                       MiniMax speech-02 voice synthesis
+│   └── t2a.py                       MiniMax speech-2.8-hd voice synthesis
 ├── tools/
 │   ├── schemas.py                   14 OpenAI-format tool schemas
 │   ├── registry.py                  Tool implementation wrappers (contextvars-threaded creds)
@@ -216,14 +216,14 @@ Every `/api/chat` opens a Trace; every LLM call, tool invocation, and routing de
 ============================================================
   Eval scorecard — 20/20 passed (100%)
 ============================================================
-  route_only   9/9    avg  3628ms  cost $0.00043
-  end_to_end   11/11  avg  8032ms  cost $0.00498
-  overall      20/20  avg  6043ms  cost $0.00541  tokens 13,163
+  route_only   9/9    avg   525ms  cost $0.00044
+  end_to_end   11/11  avg  2922ms  cost $0.00491
+  overall      20/20  avg  1843ms  cost $0.00535  tokens 12,973
 ```
 
 - **Routing accuracy: 100%** (heuristic short-circuit handles 78% of cases at zero cost)
 - **End-to-end pass rate: 100%** across web search / memory / smalltalk / greeting paths
-- **P95 latency: ~14s** (M2.7 is a reasoning model — 5–10s thinking + tool round-trip is normal; streaming would cut perceived latency to <3s)
+- **Average latency: 1.8s** (3× faster than the original baseline — improvements from M2.7 server-side optimisation + heuristic router rewrite)
 
 Run `python -m evals.run` to reproduce.
 
@@ -233,7 +233,7 @@ Run `python -m evals.run` to reproduce.
 
 - **LLM**: MiniMax-M2.7 (released 2026-03-18, $0.30/$1.20 per 1M in/out)
 - **Embeddings**: MiniMax embo-02 (1024-dim)
-- **Voice**: MiniMax speech-02-hd (optional, with voice cloning support)
+- **Voice**: MiniMax speech-2.8-hd (with voice cloning support; voice_id forward-compatible from speech-02-hd)
 - **Search**: Brave Search API (AI-Grounding endpoint)
 - **Backend**: FastAPI + Uvicorn (Python 3.12+)
 - **Auth**: Google OAuth2 (Gmail.modify + Calendar scopes), Fernet-encrypted refresh tokens
