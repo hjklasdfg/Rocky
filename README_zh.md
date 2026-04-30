@@ -9,10 +9,10 @@
 
 Rocky 和其他产品的对比：
 
-- **Siri** —— iOS 语音交互 + Apple Intelligence，但端侧 LLM 是小模型，agent 模型封闭，用户无法添加自己的 specialist 和 SaaS 信息源。
-- **ChatGPT** —— 强大的多模态交互，但无法读取 Gmail / 日历 / 个人 SaaS 数据。
-- **OpenClaw** —— 云 LLM + 本地数据 Skills，但暂不支持 iOS 语音交互。
-- **Rocky** —— iOS 原生语音交互、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、可读写用户 Gmail / 日历 / 长期记忆，支持网络搜索和 RAG 检索，并通过 MiniMax 语音克隆用用户自己的声音回答。
+- **Siri**：iOS 语音交互 + Apple Intelligence，但端侧 LLM 是小模型，agent 模型封闭，用户无法添加自己的 specialist 和 SaaS 信息源。
+- **ChatGPT**：强大的多模态互动，但无法读取 Gmail / 日历 / 个人 SaaS 数据。
+- **OpenClaw**：云端 LLM + 本地数据，但暂不支持 iOS 语音交互。
+- **Rocky** ：iOS 原生语音交互、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、可读写用户 Gmail / 日历 / 永久记忆，支持网络搜索和 RAG 检索，用户可通过 MiniMax 语音克隆输出自己的声音。
 
 **多租户架构**：每个用户配置自己的 MiniMax + Brave Search API keys（BYOK），所有凭据 Fernet 加密存 PostgreSQL，按请求通过 Python ContextVars 隔离。Google OAuth 在 `/login` 登录，`/settings` 配 keys，然后从 iOS Shortcut 或实时 dashboard 使用 Rocky。
 
