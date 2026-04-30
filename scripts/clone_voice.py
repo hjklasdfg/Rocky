@@ -33,7 +33,11 @@ from dotenv import load_dotenv
 BASE_URL = "https://api.minimax.io"
 UPLOAD_PATH = "/v1/files/upload"
 CLONE_PATH = "/v1/voice_clone"
-DEFAULT_MODEL = "speech-02-hd"  # match what the runtime T2A uses
+# MiniMax updated the /v1/voice_clone schema in 2026-Q1 — `model` and `text`
+# are now REQUIRED (used to be optional). Default to current HD variant so
+# the cloned voice_id is forward-compatible with future TTS calls.
+DEFAULT_MODEL = "speech-2.8-hd"
+DEFAULT_PREVIEW_TEXT = "Hello, this is Rocky. Voice clone test."
 
 
 def _api_key() -> str:
@@ -81,23 +85,22 @@ def clone_voice(
     voice_id: str,
     api_key: str,
     *,
-    preview_text: str | None = None,
-    model: str | None = None,
+    preview_text: str = DEFAULT_PREVIEW_TEXT,
+    model: str = DEFAULT_MODEL,
 ) -> dict:
-    """Trigger the clone. Returns the API response (may include a preview audio URL).
+    """Trigger the clone. Returns the API response (includes a preview audio URL).
 
-    Empirically, passing `model` or `text` here returns 2013 invalid_params on
-    speech-02-hd accounts. The minimum-viable payload is just file_id + voice_id;
-    actual T2A model choice happens later at synthesis time.
+    As of 2026-Q1 the /v1/voice_clone schema requires all four fields:
+    file_id, voice_id, text, model. Passing the minimal {file_id, voice_id}
+    now returns 2013 invalid_params. The voice_id is forward-compatible
+    across speech-2.x HD variants, so cloning on the latest is safest.
     """
     payload: dict = {
         "file_id": file_id,
         "voice_id": voice_id,
+        "text": preview_text,
+        "model": model,
     }
-    if model:
-        payload["model"] = model
-    if preview_text:
-        payload["text"] = preview_text
 
     print(f"[2/2] Cloning voice as voice_id='{voice_id}'...")
     resp = requests.post(
@@ -130,10 +133,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--preview-text",
-        default=None,
-        help="Optional sample text to synthesize during cloning. Disabled by default — cloning with text returned 2013 on our account.",
+        default=DEFAULT_PREVIEW_TEXT,
+        help=f"Sample text to synthesize during cloning (REQUIRED by current API). Default: {DEFAULT_PREVIEW_TEXT!r}",
     )
-    parser.add_argument("--model", default=None, help="Optional model override. Leave unset (default) — empirically required.")
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"TTS model the voice_id is being cloned for (REQUIRED by current API). Default: {DEFAULT_MODEL}",
+    )
     args = parser.parse_args()
 
     # Load .env from project root (parent of scripts/)
