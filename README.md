@@ -29,7 +29,7 @@ Rocky lives in the gap that **Siri**, **ChatGPT**, and **OpenClaw** each leave o
 | Prompts | **6 versioned prompts** (`prompts/v1/*.md`, `PROMPT_VERSION` env to swap) |
 | RAG | **Local vector store** (sentence-transformers + numpy) over 6 months of email via Gmail OAuth. Store layer is source-agnostic — adding more OAuth-able sources (Notion, GDrive, Slack) is a ~30-line indexer + OAuth wiring; truly-local files would require an upload endpoint or a per-user sync agent |
 | Voice | **MiniMax speech-2.8-hd** T2A + voice cloning (returns `audio_url`); BYOK rejection prompt is pre-synthesised once and reused |
-| Multi-tenant | **Per-user MiniMax / Brave keys** (BYOK), Fernet-encrypted in PG, ContextVar-injected per request; operator allowlist gives a free-pass pool |
+| Multi-tenant | **Per-user MiniMax / Brave keys** (BYOK), Fernet-encrypted in PG, ContextVar-injected per request; operator allowlist lets trusted users skip BYOK and share the server's quota |
 | Observability | **Per-request traces** (incl. BYOK rejections), `/metrics`, live `/dashboard` |
 | Eval | **20-case eval suite** with routing / tool-call / latency / cost metrics |
 
@@ -56,7 +56,7 @@ Rocky lives in the gap that **Siri**, **ChatGPT**, and **OpenClaw** each leave o
  FastPath    Agent        Agent          Agent         Agent         (RAG)
  (no LLM)    │            │              │             │              │
              Gmail API    Calendar API   Brave Search  user memory    numpy store
-             5 tools      5 tools        AI Grounding  save/forget    vector search
+             5 tools      5 tools        AI Grounding  save/delete    vector search
                                     │
                                     ↓ final reply text
                        ┌─── MiniMax speech-2.8-hd T2A ───┐
@@ -204,7 +204,7 @@ Token Plan keys (`sk-cp-...`) cover text models cheaply under subscription quota
 
 For ≤2K emails per user, a flat cosine search over a numpy matrix is sub-millisecond and has zero compile dependencies. Chroma's tokenizer dependency requires Rust on Python 3.14. The `rag/email_store.py` interface is kept generic — swap to Chroma / FAISS later if scale demands.
 
-### 7. Two-key fallback architecture for graceful degradation
+### 7. Graceful degradation across external dependencies
 
 Each external dependency (MiniMax chat, MiniMax T2A, Brave, Gmail, Calendar) fails independently. Failures are caught and logged; the user gets at minimum a text reply. Examples:
 - T2A fails → `audio_url=null`, iOS plays Siri TTS
@@ -251,11 +251,11 @@ Run `python -m evals.run` to reproduce.
 
 ## Roadmap (deferred from this iteration)
 
-- **Streaming** — stream M2.7 token-by-token to T2A so the user hears the start of the reply within ~1s (currently ~3s end-to-end).
-- **Smaller router model** — drop the LLM router fallback to a cheaper non-reasoning model (e.g. abab6.5s-chat) for faster ambiguous routing. Heuristic short-circuit already covers 78% of requests at zero cost.
-- **More RAG sources** — extend the indexer to Notion / Google Drive / Slack via OAuth. The vector store is source-agnostic; each new source is a ~30-line indexer + OAuth wiring.
-- **Vision turn** — multimodal (photo + voice) via MiniMax-VL-01 once it's exposed on the public chat-completions endpoint, or via an OpenAI / Anthropic provider in the meantime.
-- **Self-hostable Mac app** — bundle Rocky as a `.app` so power users can run it locally for full data privacy. Multi-tenant code already supports per-user isolation that degrades to single-user trivially.
+- **Streaming** — stream M2.7 token-by-token into T2A so the user hears the start of the reply within ~1s (currently ~3s end-to-end).
+- **Lighter router model** — switch the LLM fallback from a reasoning model to a smaller non-reasoning one to speed up the ambiguous-routing path. Heuristic short-circuit already covers 78% of requests at zero cost; this targets the remaining 22%.
+- **More RAG sources** — extend the indexer to Notion / Google Drive / Slack via OAuth. The vector store is source-agnostic; each new source is roughly a 30-line indexer plus OAuth wiring.
+- **Multimodal input** — accept photo + voice once MiniMax-VL-01 is exposed on the public chat-completions endpoint; in the interim, an OpenAI or Anthropic vision provider can sit behind the same interface.
+- **Self-hostable Mac app** — bundle Rocky as a `.app` so privacy-conscious users can run it fully on-device. The multi-tenant code already supports per-user isolation, so collapsing it to single-user is straightforward.
 
 ---
 

@@ -27,11 +27,11 @@ Rocky 占住的是 **Siri**、**ChatGPT**、**OpenClaw** 各自留出来的空�
 | 架构 | **Router → 5 个 specialist agent**（email、calendar、web、memory、knowledge）|
 | Tool 注册 | **OpenAI 格式 tool schemas 版本化**（`tools/schemas.py`）|
 | Prompts | **6 个版本化 prompt**（`prompts/v1/*.md`，通过 `PROMPT_VERSION` 环境变量切换）|
-| RAG | **本地向量库**（sentence-transformers + numpy）覆盖 6 个月邮件（Gmail OAuth 拉取）。Store 层 source-agnostic —— 加 OAuth 云端源（Notion / GDrive / Slack）只需 ~30 行 indexer + OAuth 接线；纯本地文件需要上传端点或 per-user sync agent |
-| 语音 | **MiniMax speech-2.8-hd** T2A + 声音克隆（返回 `audio_url`）；BYOK 拒绝音频一次性预合成、永久复用 |
-| 多租户 | **每用户独立 MiniMax / Brave keys**（BYOK），Fernet 加密存 PG，ContextVar 按请求注入；operator 白名单提供"招待"额度池 |
+| RAG | **本地向量库**（sentence-transformers + numpy）默认覆盖近 6 个月邮件（Gmail OAuth 拉取）。存储层与数据源解耦 —— 接入 OAuth 类云端源（Notion / GDrive / Slack）只需新增约 30 行 indexer + OAuth 配置；本地文件源则需要额外的上传接口或独立的同步进程 |
+| 语音 | **MiniMax speech-2.8-hd** T2A + 声音克隆（返回 `audio_url`）；BYOK 拒绝提示音一次性预合成、所有用户共用 |
+| 多租户 | **每用户独立 MiniMax / Brave keys**（BYOK），Fernet 加密存 PG，ContextVar 按请求注入；operator 白名单允许可信用户跳过 BYOK，复用服务端共享额度 |
 | 可观测性 | **每请求一个 trace**（含 BYOK 拒绝事件）、`/metrics`、实时 `/dashboard` |
-| Eval | **20 case eval suite** 覆盖路由 / 工具调用 / latency / cost 指标 |
+| Eval | **20 个测试用例**的回归 suite，覆盖路由 / 工具调用 / latency / cost 指标 |
 
 ---
 
@@ -186,7 +186,7 @@ python -m evals.run --case e2e-web-weather  # 单个 case
 
 ### 2. OpenAI 兼容的 MiniMax client（`llm/minimax.py`）
 
-MiniMax 在 `https://api.minimax.io/v1` 暴露 OpenAI 兼容 endpoint。我们用 `openai` SDK 加 `base_url` override —— 函数调用、消息格式、tool schemas 都白嫖。M2.7 是推理模型，输出包含 `<think>...</think>` 块；`strip_think()` 把它从用户可见内容里移除，但保留在 trace 里供 debug。
+MiniMax 在 `https://api.minimax.io/v1` 暴露 OpenAI 兼容 endpoint。我们用 `openai` SDK 加 `base_url` override —— function calling、消息格式、tool schemas 直接复用，无需重写客户端。M2.7 是推理模型，输出包含 `<think>...</think>` 块；`strip_think()` 把它从用户可见内容里剔除，但保留在 trace 里供调试。
 
 ### 3. 通过 `contextvars` 实现按请求凭据隔离（`tools/_credentials.py`）
 
@@ -194,9 +194,9 @@ MiniMax 在 `https://api.minimax.io/v1` 暴露 OpenAI 兼容 endpoint。我们�
 
 ### 4. 版本化 prompts（`prompts/v1/*.md`）
 
-6 个 markdown 文件，每个 agent 一个。`prompts/loader.py` 把 `{context}` 块（当前时间 + 用户记忆）替换进去。`.env` 里设 `PROMPT_VERSION=v2` 就能整套切换 —— 适合做 prompt A/B 而不用 redeploy。
+6 个 markdown 文件，每个 agent 一个。`prompts/loader.py` 把 `{context}` 块（当前时间 + 用户记忆）替换进去。`.env` 里设 `PROMPT_VERSION=v2` 就能整套切换 —— 适合做 prompt A/B 测试，无需重新部署。
 
-### 5. 两把 MiniMax key 对应两种计费模型
+### 5. 两个 MiniMax key 对应两种计费模型
 
 Token Plan key（`sk-cp-...`）在订阅配额下廉价覆盖文本模型。语音模型通常按 pay-as-you-go 收费（`sk-api-...`）。`MINIMAX_T2A_API_KEY` 环境变量让你把它们分开 —— chat 走 Token Plan，T2A 走 pay-as-you-go。
 
@@ -249,13 +249,13 @@ Token Plan key（`sk-cp-...`）在订阅配额下廉价覆盖文本模型。语�
 
 ---
 
-## Roadmap（本轮 deferred 的功能）
+## Roadmap（本轮暂未实现的功能）
 
-- **流式输出** —— M2.7 token-by-token 流到 T2A，让用户 1 秒内听到第一个字（当前端到端 ~3 秒）。
-- **更小的 router 模型** —— 把 router 的 LLM 兜底降级到非推理模型（如 abab6.5s-chat），加速歧义路由。Heuristic 短路已经覆盖 78% 请求。
-- **更多 RAG 数据源** —— 把 indexer 扩展到 Notion / Google Drive / Slack（OAuth）。向量库 source-agnostic，每个新源 ~30 行 indexer + OAuth 接线。
-- **多模态 turn** —— 等 MiniMax-VL-01 在公开 chat-completions endpoint 暴露时支持 photo + voice，或者中间用 OpenAI / Anthropic provider 顶上。
-- **可自托管 Mac App** —— 把 Rocky 打包成 `.app`，让 power user 本地跑达到完全数据隐私。多租户代码已经支持 per-user 隔离，退化成单用户场景是 trivial 的。
+- **流式输出** —— M2.7 token-by-token 流到 T2A，让用户 1 秒内听到第一个字（当前端到端约 3 秒）。
+- **更轻量的 router 模型** —— 把 router 的 LLM 兜底从推理模型换成非推理模型，加速歧义路由的兜底路径。Heuristic 短路已经覆盖 78% 请求，进一步优化的是剩下那 22%。
+- **更多 RAG 数据源** —— 把 indexer 扩展到 Notion / Google Drive / Slack（OAuth）。向量库与数据源解耦，每个新源约 30 行 indexer + OAuth 接入。
+- **多模态对话** —— 等 MiniMax-VL-01 通过公开的 chat-completions endpoint 上线后支持 photo + voice 输入；过渡期可临时接入 OpenAI / Anthropic 的 vision provider。
+- **可自托管的 Mac App** —— 把 Rocky 打包成 `.app`，让重视隐私的用户本地运行、数据完全不出端。多租户代码已经支持按用户隔离，降级到单用户场景非常简单。
 
 ---
 
