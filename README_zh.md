@@ -56,7 +56,7 @@ Rocky 占住的是 **Siri**、**ChatGPT**、**OpenClaw** 各自留出来的空�
  FastPath    Agent        Agent          Agent         Agent          (RAG)
  (无 LLM)    │            │              │             │              │
              Gmail API    Calendar API   Brave 搜索    用户记忆       numpy 向量库
-             5 工具       5 工具         AI Grounding  保存/删除      embo-02 检索
+             5 工具       5 工具         AI Grounding  保存/删除      本地向量检索
                                     │
                                     ↓ 最终回复文本
                        ┌─── MiniMax speech-2.8-hd T2A ───┐
@@ -97,7 +97,7 @@ rocky/
 │   └── _context.py                  共享 system prompt context 渲染器
 ├── llm/
 │   ├── minimax.py                   OpenAI 兼容 client + 成本计算 + <think> 剥离
-│   ├── embedding.py                 MiniMax embo-02（RAG 向量化）
+│   ├── embedding.py                 Embedding 抽象层（本地 ST / MiniMax / OpenAI 三种 provider）
 │   └── t2a.py                       MiniMax speech-2.8-hd 语音合成
 ├── tools/
 │   ├── schemas.py                   14 个 OpenAI 格式 tool schemas
@@ -239,7 +239,7 @@ Token Plan key（`sk-cp-...`）在订阅配额下廉价覆盖文本模型。语�
 ## 技术栈
 
 - **LLM**：MiniMax-M2.7（2026-03-18 发布，$0.30 / $1.20 per 1M tokens 输入/输出）
-- **Embedding**：MiniMax embo-02（1024 维）
+- **Embedding**：sentence-transformers `all-MiniLM-L6-v2`（384 维，端侧推理，默认）；可通过 `EMBEDDING_PROVIDER` 切换到 MiniMax `embo-02` 或 OpenAI `text-embedding-3-small`
 - **语音**：MiniMax speech-2.8-hd（支持声音克隆；voice_id 从 speech-02-hd 向前兼容）
 - **搜索**：Brave Search API（AI-Grounding endpoint）
 - **后端**：FastAPI + Uvicorn（Python 3.12+）

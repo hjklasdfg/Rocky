@@ -56,7 +56,7 @@ Rocky lives in the gap that **Siri**, **ChatGPT**, and **OpenClaw** each leave o
  FastPath    Agent        Agent          Agent         Agent         (RAG)
  (no LLM)    │            │              │             │              │
              Gmail API    Calendar API   Brave Search  user memory    numpy store
-             5 tools      5 tools        AI Grounding  save/forget    embo-02 search
+             5 tools      5 tools        AI Grounding  save/forget    vector search
                                     │
                                     ↓ final reply text
                        ┌─── MiniMax speech-2.8-hd T2A ───┐
@@ -97,7 +97,7 @@ rocky/
 │   └── _context.py                  Shared system-prompt context renderer
 ├── llm/
 │   ├── minimax.py                   OpenAI-compatible client + cost calc + <think> stripping
-│   ├── embedding.py                 MiniMax embo-02 (RAG vectorisation)
+│   ├── embedding.py                 Embedding abstraction (local ST / MiniMax / OpenAI providers)
 │   └── t2a.py                       MiniMax speech-2.8-hd voice synthesis
 ├── tools/
 │   ├── schemas.py                   14 OpenAI-format tool schemas
@@ -239,7 +239,7 @@ Run `python -m evals.run` to reproduce.
 ## Tech stack
 
 - **LLM**: MiniMax-M2.7 (released 2026-03-18, $0.30/$1.20 per 1M in/out)
-- **Embeddings**: MiniMax embo-02 (1024-dim)
+- **Embeddings**: sentence-transformers `all-MiniLM-L6-v2` (384-dim, on-device, default); pluggable to MiniMax `embo-02` or OpenAI `text-embedding-3-small` via `EMBEDDING_PROVIDER`
 - **Voice**: MiniMax speech-2.8-hd (with voice cloning support; voice_id forward-compatible from speech-02-hd)
 - **Search**: Brave Search API (AI-Grounding endpoint)
 - **Backend**: FastAPI + Uvicorn (Python 3.12+)
