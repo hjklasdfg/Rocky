@@ -7,7 +7,12 @@
 > **"周五下午 4 点加个 engineering review，跟 Wei 一起。"** —— 已写入我的 Google 日历。
 > **"回复 Sarah 我 3 点到。"** —— 邮件已发，threading 正确。
 
-Rocky 填补了 Siri（有语音但没 LLM）和 ChatGPT（有 LLM 但不读我的个人 SaaS 数据）之间的空白。**MiniMax-M2.7** 驱动一个多 agent router，调度 5 个 specialist 跨 Gmail、Google Calendar、Brave 搜索、本地邮件 RAG 知识库工作。所有回复用我自己的克隆音色通过 MiniMax T2A 合成。
+Rocky 占住的是 **Siri**、**ChatGPT**、**OpenClaw** 各自留出来的空白：
+
+- **Siri**（含 Apple Intelligence）—— 有语音 + Apple 生态集成，但端侧 LLM 是小模型，agent 模型封闭（你无法添加自己的 specialist）。
+- **ChatGPT** —— 最强的语音 + LLM 组合，但读不了我的 Gmail / 日历 / 个人 SaaS 数据。
+- **OpenClaw** —— 智能 LLM + 本地数据 Skills，但是 Mac native，没有 iPhone 语音入口。
+- **Rocky** 三者兼得：iPhone 语音（通过 iOS Shortcut）、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、读写我的 Gmail / 日历 / 邮件 RAG —— 全部跑在我端到端搭建的开放架构里。所有回复用我自己的克隆音色通过 MiniMax T2A 合成。
 
 **多租户架构**：每个用户配置自己的 MiniMax + Brave keys（BYOK），所有凭据 Fernet 加密存 PostgreSQL，按请求通过 Python ContextVars 隔离。Google OAuth 在 `/login` 登录，`/settings` 配 keys，然后从 iOS Shortcut 或实时 dashboard 使用 Rocky。
 

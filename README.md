@@ -7,7 +7,12 @@
 > **"Add an engineering review Friday at 4pm with Wei."** — Done, on my Google Calendar.
 > **"Reply to Sarah saying I'll be there at 3."** — Sent, properly threaded.
 
-Rocky fills the gap between Siri (voice but no LLM) and ChatGPT (smart but no integration with my personal SaaS). **MiniMax-M2.7** powers a multi-agent router dispatching to five specialists across Gmail, Google Calendar, Brave Search, and a local RAG knowledge base over my email history. Replies are synthesised in my own cloned voice via MiniMax T2A.
+Rocky lives in the gap that **Siri**, **ChatGPT**, and **OpenClaw** each leave open:
+
+- **Siri** (with Apple Intelligence) — voice + Apple-ecosystem integration, but the on-device LLM is small and the agent model is closed (you can't add your own specialists).
+- **ChatGPT** — strongest voice + LLM combination, but no integration with my Gmail / Calendar / personal SaaS.
+- **OpenClaw** — smart LLM + local-data Skills, but it's Mac-native, no iPhone voice trigger.
+- **Rocky** combines all three: iPhone voice (via iOS Shortcut), **MiniMax-M2.7** driving 5 tool-calling specialists, and read/write access to my Gmail / Calendar / email RAG — in an open architecture I built end-to-end. Replies synthesised in my own cloned voice via MiniMax T2A.
 
 **Multi-tenant by design**: each user configures their own MiniMax + Brave keys (BYOK), all credentials Fernet-encrypted in PostgreSQL and per-request scoped via Python ContextVars. Sign in with Google OAuth at `/login`, configure keys at `/settings`, then use Rocky from the iOS Shortcut or the live dashboard.
 
