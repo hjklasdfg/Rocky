@@ -244,9 +244,11 @@ Run `python -m evals.run` to reproduce.
 
 ## Roadmap (deferred from this iteration)
 
-- **Voice cloning** — record a 30-second sample, upload to MiniMax, get a custom `voice_id`. Rocky speaks in that voice.
-- **Streaming** — stream M2.7 token-by-token to T2A so the user hears the start of the reply within ~1s.
-- **Smaller router model** — drop the LLM router fallback to a cheaper non-reasoning model (e.g. abab6.5s-chat) for faster ambiguous routing.
+- **Streaming** — stream M2.7 token-by-token to T2A so the user hears the start of the reply within ~1s (currently ~3s end-to-end).
+- **Smaller router model** — drop the LLM router fallback to a cheaper non-reasoning model (e.g. abab6.5s-chat) for faster ambiguous routing. Heuristic short-circuit already covers 78% of requests at zero cost.
+- **More RAG sources** — extend the indexer to Notion / Google Drive / Slack via OAuth. The vector store is source-agnostic; each new source is a ~30-line indexer + OAuth wiring.
+- **Vision turn** — multimodal (photo + voice) via MiniMax-VL-01 once it's exposed on the public chat-completions endpoint, or via an OpenAI / Anthropic provider in the meantime.
+- **Self-hostable Mac app** — bundle Rocky as a `.app` so power users can run it locally for full data privacy. Multi-tenant code already supports per-user isolation that degrades to single-user trivially.
 
 ---
 
