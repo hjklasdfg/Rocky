@@ -2,19 +2,19 @@
 
 🌐 [English](README.md) · **中文**
 
-> **"Hi Rocky, 我明天有什么安排？"** —— 他用我克隆的声音回答。
-> **"上个月 Sarah 跟我说的合同那件事是什么？"** —— 毫秒级语义检索命中。
-> **"周五下午 4 点加个 engineering review，跟 Wei 一起。"** —— 已写入我的 Google 日历。
-> **"回复 Sarah 我 3 点到。"** —— 邮件已发，threading 正确。
+> **"Hi Rocky, 我明天有什么安排？"** —— "明天 10 点和 Wei 的 engineering review，下午 2 点和 Sarah 通合同电话。"（用我的克隆声音念出）
+> **"上个月 Sarah 跟我说的合同那件事是什么？"** —— "Sarah 3 月 12 号邮件提到要把 Q2 续约价格往上调 8%。"（毫秒级 RAG 命中）
+> **"周五下午 4 点加个 engineering review，跟 Wei 一起。"** —— "好的，已加到周五下午 4 点。"
+> **"回复 Sarah 我 3 点到。"** —— "已发出。"（自动接在原邮件对话串下）
 
-Rocky 占住的是 **Siri**、**ChatGPT**、**OpenClaw** 各自留出来的空白：
+Rocky 和其他产品的对比：
 
-- **Siri**（含 Apple Intelligence）—— 有语音 + Apple 生态集成，但端侧 LLM 是小模型，agent 模型封闭（你无法添加自己的 specialist）。
-- **ChatGPT** —— 最强的语音 + LLM 组合，但读不了我的 Gmail / 日历 / 个人 SaaS 数据。
-- **OpenClaw** —— 智能 LLM + 本地数据 Skills，但是 Mac native，没有 iPhone 语音入口。
-- **Rocky** 三者兼得：iPhone 语音（通过 iOS Shortcut）、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、读写我的 Gmail / 日历 / 邮件 RAG —— 全部跑在我端到端搭建的开放架构里。所有回复用我自己的克隆音色通过 MiniMax T2A 合成。
+- **Siri** —— iOS 语音交互 + Apple Intelligence，但端侧 LLM 是小模型，agent 模型封闭，用户无法添加自己的 specialist 和 SaaS 信息源。
+- **ChatGPT** —— 强大的多模态交互，但无法读取 Gmail / 日历 / 个人 SaaS 数据。
+- **OpenClaw** —— 云 LLM + 本地数据 Skills，但暂不支持 iOS 语音交互。
+- **Rocky** —— iOS 原生语音交互、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、可读写用户 Gmail / 日历 / 长期记忆，支持网络搜索和 RAG 检索，并通过 MiniMax 语音克隆用用户自己的声音回答。
 
-**多租户架构**：每个用户配置自己的 MiniMax + Brave keys（BYOK），所有凭据 Fernet 加密存 PostgreSQL，按请求通过 Python ContextVars 隔离。Google OAuth 在 `/login` 登录，`/settings` 配 keys，然后从 iOS Shortcut 或实时 dashboard 使用 Rocky。
+**多租户架构**：每个用户配置自己的 MiniMax + Brave Search API keys（BYOK），所有凭据 Fernet 加密存 PostgreSQL，按请求通过 Python ContextVars 隔离。Google OAuth 在 `/login` 登录，`/settings` 配 keys，然后从 iOS Shortcut 或实时 dashboard 使用 Rocky。
 
 ---
 

@@ -2,19 +2,19 @@
 
 🌐 **English** · [中文](README_zh.md)
 
-> **"Hi Rocky, what's on my schedule tomorrow?"** — He answers in my own cloned voice.
-> **"What did Sarah say last month about the contract?"** — Semantic search hits in milliseconds.
-> **"Add an engineering review Friday at 4pm with Wei."** — Done, on my Google Calendar.
-> **"Reply to Sarah saying I'll be there at 3."** — Sent, properly threaded.
+> **"Hi Rocky, what's on my schedule tomorrow?"** — "10am engineering review with Wei, 2pm contract call with Sarah." (spoken in my own cloned voice)
+> **"What did Sarah say last month about the contract?"** — "Sarah's March 12 email said she wants to push the Q2 renewal price up 8%." (millisecond RAG hit)
+> **"Add an engineering review Friday at 4pm with Wei."** — "Done, scheduled for Friday at 4pm."
+> **"Reply to Sarah saying I'll be there at 3."** — "Sent." (threaded under the original email)
 
-Rocky lives in the gap that **Siri**, **ChatGPT**, and **OpenClaw** each leave open:
+Rocky compared to other products:
 
-- **Siri** (with Apple Intelligence) — voice + Apple-ecosystem integration, but the on-device LLM is small and the agent model is closed (you can't add your own specialists).
-- **ChatGPT** — strongest voice + LLM combination, but no integration with my Gmail / Calendar / personal SaaS.
-- **OpenClaw** — smart LLM + local-data Skills, but it's Mac-native, no iPhone voice trigger.
-- **Rocky** combines all three: iPhone voice (via iOS Shortcut), **MiniMax-M2.7** driving 5 tool-calling specialists, and read/write access to my Gmail / Calendar / email RAG — in an open architecture I built end-to-end. Replies synthesised in my own cloned voice via MiniMax T2A.
+- **Siri** — iOS voice + Apple Intelligence, but the on-device LLM is small, the agent model is closed, and users can't register their own specialists or SaaS data sources.
+- **ChatGPT** — strong multimodal interaction, but no access to Gmail / Calendar / personal SaaS data.
+- **OpenClaw** — cloud LLM + local-data Skills, but no iOS voice yet.
+- **Rocky** — native iOS voice, **MiniMax-M2.7** driving 5 tool-calling specialists, read/write access to the user's Gmail / Calendar / long-term memory, plus web search and RAG. Replies in the user's own voice via MiniMax voice cloning.
 
-**Multi-tenant by design**: each user configures their own MiniMax + Brave keys (BYOK), all credentials Fernet-encrypted in PostgreSQL and per-request scoped via Python ContextVars. Sign in with Google OAuth at `/login`, configure keys at `/settings`, then use Rocky from the iOS Shortcut or the live dashboard.
+**Multi-tenant by design**: each user configures their own MiniMax + Brave Search API keys (BYOK), all credentials Fernet-encrypted in PostgreSQL and per-request scoped via Python ContextVars. Sign in with Google OAuth at `/login`, configure keys at `/settings`, then use Rocky from the iOS Shortcut or the live dashboard.
 
 ---
 
