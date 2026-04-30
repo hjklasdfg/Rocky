@@ -1,5 +1,7 @@
 # Rocky — Multi-Agent Voice Assistant on MiniMax
 
+🌐 **English** · [中文](README_zh.md)
+
 > **"Hi Rocky, what's on my schedule tomorrow?"** — He answers in my own cloned voice.
 > **"What did Sarah say last month about the contract?"** — Semantic search hits in milliseconds.
 > **"Add an engineering review Friday at 4pm with Wei."** — Done, on my Google Calendar.
