@@ -12,7 +12,7 @@ Rocky 和其他产品的对比：
 - **Siri**：iOS 语音交互 + Apple Intelligence，但端侧 LLM 是小模型，agent 模型封闭，用户无法添加自己的 specialist 和 SaaS 信息源。
 - **ChatGPT**：强大的多模态互动，但无法读取 Gmail / 日历 / 个人 SaaS 数据。
 - **OpenClaw**：云端 LLM + 本地数据，但暂不支持 iOS 语音交互。
-- **Rocky** ：iOS 原生语音交互、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、可读写用户 Gmail / 日历 / 永久记忆，支持网络搜索和 RAG 检索，用户可通过 MiniMax 语音克隆输出自己的声音。
+- **Rocky**：iOS 原生语音交互、**MiniMax-M2.7** 驱动 5 个 tool-calling specialist、可读写用户 Gmail / 日历 / 长期记忆，支持网络搜索和 RAG 检索，用户可通过 MiniMax 语音克隆输出自己的声音。
 
 **多租户架构**：每个用户配置自己的 MiniMax + Brave Search API keys（BYOK），所有凭据 Fernet 加密存 PostgreSQL，按请求通过 Python ContextVars 隔离。Google OAuth 在 `/login` 登录，`/settings` 配 keys，然后从 iOS Shortcut 或实时 dashboard 使用 Rocky。
 
@@ -255,7 +255,7 @@ Token Plan key（`sk-cp-...`）在订阅配额下廉价覆盖文本模型。语�
 - **更轻量的 router 模型** —— 把 router 的 LLM 兜底从推理模型换成非推理模型，加速歧义路由的兜底路径。Heuristic 短路已经覆盖 78% 请求，进一步优化的是剩下那 22%。
 - **更多 RAG 数据源** —— 把 indexer 扩展到 Notion / Google Drive / Slack（OAuth）。向量库与数据源解耦，每个新源约 30 行 indexer + OAuth 接入。
 - **多模态对话** —— 等 MiniMax-VL-01 通过公开的 chat-completions endpoint 上线后支持 photo + voice 输入；过渡期可临时接入 OpenAI / Anthropic 的 vision provider。
-- **可自托管的 Mac App** —— 把 Rocky 打包成 `.app`，让重视隐私的用户本地运行、数据完全不出端。多租户代码已经支持按用户隔离，降级到单用户场景非常简单。
+- **跨环境自托管** —— Rocky 服务端是纯 Python + FastAPI，未来计划提供 Docker 镜像、Mac `.app`、一键脚本等多种打包形式，能跑在 Mac mini / 家庭服务器 / VPS / NAS 等任意托管环境。重视隐私的用户可以完全本地运行，所有数据（OAuth token / 邮件向量库 / 对话历史）不出自己的硬件。多租户代码已经支持按用户隔离，降级到单用户场景非常简单。
 
 ---
 

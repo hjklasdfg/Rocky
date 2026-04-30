@@ -9,10 +9,10 @@
 
 Rocky compared to other products:
 
-- **Siri** — iOS voice + Apple Intelligence, but the on-device LLM is small, the agent model is closed, and users can't register their own specialists or SaaS data sources.
-- **ChatGPT** — strong multimodal interaction, but no access to Gmail / Calendar / personal SaaS data.
-- **OpenClaw** — cloud LLM + local-data Skills, but no iOS voice yet.
-- **Rocky** — native iOS voice, **MiniMax-M2.7** driving 5 tool-calling specialists, read/write access to the user's Gmail / Calendar / long-term memory, plus web search and RAG. Replies in the user's own voice via MiniMax voice cloning.
+- **Siri**: iOS voice + Apple Intelligence, but the on-device LLM is small, the agent model is closed, and users can't register their own specialists or SaaS data sources.
+- **ChatGPT**: strong multimodal interaction, but no access to Gmail / Calendar / personal SaaS data.
+- **OpenClaw**: cloud LLM + local-data Skills, but no iOS voice yet.
+- **Rocky**: native iOS voice, **MiniMax-M2.7** driving 5 tool-calling specialists, read/write access to the user's Gmail / Calendar / long-term memory, plus web search and RAG. Replies in the user's own voice via MiniMax voice cloning.
 
 **Multi-tenant by design**: each user configures their own MiniMax + Brave Search API keys (BYOK), all credentials Fernet-encrypted in PostgreSQL and per-request scoped via Python ContextVars. Sign in with Google OAuth at `/login`, configure keys at `/settings`, then use Rocky from the iOS Shortcut or the live dashboard.
 
@@ -255,7 +255,7 @@ Run `python -m evals.run` to reproduce.
 - **Lighter router model** — switch the LLM fallback from a reasoning model to a smaller non-reasoning one to speed up the ambiguous-routing path. Heuristic short-circuit already covers 78% of requests at zero cost; this targets the remaining 22%.
 - **More RAG sources** — extend the indexer to Notion / Google Drive / Slack via OAuth. The vector store is source-agnostic; each new source is roughly a 30-line indexer plus OAuth wiring.
 - **Multimodal input** — accept photo + voice once MiniMax-VL-01 is exposed on the public chat-completions endpoint; in the interim, an OpenAI or Anthropic vision provider can sit behind the same interface.
-- **Self-hostable Mac app** — bundle Rocky as a `.app` so privacy-conscious users can run it fully on-device. The multi-tenant code already supports per-user isolation, so collapsing it to single-user is straightforward.
+- **Self-hostable anywhere** — Rocky's backend is pure Python + FastAPI, with planned packaging as Docker images, a Mac `.app`, and one-line install scripts so it can run wherever you want to host it (Mac mini, home server, VPS, NAS). Privacy-conscious users can run it fully on-device with all data (OAuth tokens, email vector index, conversation history) staying on their own hardware. The multi-tenant code already supports per-user isolation, so collapsing it to single-user is straightforward.
 
 ---
 
